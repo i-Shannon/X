@@ -998,6 +998,101 @@ const FormulaEditor = ({
       });
     }
 
+    // 新增: 检查整体公式结构
+    // 检查是否有无效的内容跟在合法表达式后面
+    const checkTrailingContent = () => {
+      // 简单解析公式的有效部分
+      let position = 0;
+      let inFunction = false;
+      let bracketCount = 0;
+
+      // 解析主要表达式
+      while (position < formula.length) {
+        // 跳过空格
+        if (/\s/.test(formula[position])) {
+          position++;
+          continue;
+        }
+
+        // 检查函数调用开始
+        if (/[A-Z]/.test(formula[position]) && !inFunction) {
+          // 可能是函数名称开始
+          let funcNameEnd = position;
+          while (funcNameEnd < formula.length && /[A-Za-z0-9]/.test(formula[funcNameEnd])) {
+            funcNameEnd++;
+          }
+
+          // 跳过函数名后的空格
+          while (funcNameEnd < formula.length && /\s/.test(formula[funcNameEnd])) {
+            funcNameEnd++;
+          }
+
+          // 检查函数名后是否跟着左括号
+          if (funcNameEnd < formula.length && formula[funcNameEnd] === '(') {
+            position = funcNameEnd + 1; // 移动到左括号之后
+            inFunction = true;
+            bracketCount = 1;
+            continue;
+          }
+        }
+
+        // 处理括号
+        if (formula[position] === '(') {
+          bracketCount++;
+        } else if (formula[position] === ')') {
+          bracketCount--;
+          if (bracketCount === 0 && inFunction) {
+            // 函数调用已结束
+            inFunction = false;
+            position++;
+
+            // 检查函数调用后是否有非空字符
+            let hasTrailingContent = false;
+            for (let i = position; i < formula.length; i++) {
+              if (!/\s/.test(formula[i])) {
+                hasTrailingContent = true;
+                errors.push({
+                  type: 'syntax',
+                  message: `位置 ${i + 1} 处有非法的尾随内容: "${formula.substring(i)}"`,
+                  position: i,
+                });
+                break;
+              }
+            }
+
+            if (hasTrailingContent) {
+              break;
+            }
+
+            // 如果没有尾随内容，则公式结束
+            break;
+          }
+        }
+
+        // 移动到下一个字符
+        position++;
+      }
+
+      // 如果不是函数调用，检查是否是单个变量引用
+      if (!inFunction && position === 0) {
+        // 尝试解析为单个变量引用
+        const variableMatch = formula.match(/^\s*([A-Za-z0-9_.]+)\s*$/);
+        if (variableMatch) {
+          const variable = variableMatch[1];
+          if (!isVariableValid(variable)) {
+            errors.push({
+              type: 'variable',
+              message: `"${variable}" 不是有效的变量或常量`,
+              variable,
+            });
+          }
+          return; // 是合法的单变量引用，不需要检查尾随内容
+        }
+      }
+    };
+
+    checkTrailingContent();
+
     setValidationErrors(errors);
     return errors;
   };

@@ -112,8 +112,8 @@ export const FIELD_TYPE_CONFIG = {
 
 // 默认的初始公式
 export const DEFAULT_FORMULA = {
-  display: 'ADD(1, 人员对象.ID)',
-  source: 'ADD(1, person.id)'
+  display: 'ADD(1, 1)',
+  source: 'ADD(1, 1)'
 };
 
 // 默认的测试数据

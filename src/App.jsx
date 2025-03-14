@@ -25,16 +25,17 @@ const App = () => {
         { displayName: '作者', sourceName: 'author', type: '文本' },
         { displayName: '售价', sourceName: 'price', type: '数字' },
         { displayName: '版本号', sourceName: 'version', type: '数字' },
-        {
-          displayName: '人员对象',
-          sourceName: 'person',
-          type: 'object',
-          fields: [
-            { displayName: 'ID', sourceName: 'id', type: '数字' },
-            { displayName: '姓名', sourceName: 'name', type: '文本' },
-            { displayName: '数量', sourceName: 'count', type: '数字' },
-          ],
-        },
+        { displayName: '创建时间', sourceName: 'createDate', type: '时间' },
+        // {
+        //   displayName: '人员对象',
+        //   sourceName: 'person',
+        //   type: 'object',
+        //   fields: [
+        //     { displayName: 'ID', sourceName: 'id', type: '数字' },
+        //     { displayName: '姓名', sourceName: 'name', type: '文本' },
+        //     { displayName: '数量', sourceName: 'count', type: '数字' },
+        //   ],
+        // },
       ];
 
       setFields(mockFieldData);
@@ -95,8 +96,8 @@ const App = () => {
           fields={fields}
           isLoading={isLoading}
           initialFormula={{
-            display: 'ADD(1, 人员对象.ID)',
-            source: 'ADD(1, person.id)',
+            display: 'ADD(1, 1)',
+            source: 'ADD(1, 1',
           }}
           onSave={handleSaveFormula}
           onCancel={() => {}}

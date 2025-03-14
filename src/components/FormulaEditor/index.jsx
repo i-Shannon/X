@@ -1,3 +1,4 @@
+// 修改后支持与 Ant Design Form 集成的公式编辑器组件
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Input,
@@ -575,34 +576,30 @@ const FieldsLoadingState = () => (
 );
 
 /**
- * 公式编辑器组件
+ * 公式编辑器组件 - 修改为支持Form组件集成
  * @param {Object} props 组件属性
  * @param {Array} props.fields 表单字段数组
  * @param {boolean} props.isLoading 是否正在加载字段数据
- * @param {string} props.initialFormula 初始公式（可选，默认使用DEFAULT_FORMULA）
- * @param {Function} props.onSave 保存公式的回调函数，参数为公式字符串
+ * @param {Object} props.value 当前公式对象 (由Form提供)
+ * @param {Function} props.onChange 公式变化的回调函数 (由Form调用)
  * @param {Function} props.onCancel 取消编辑的回调函数（可选）
  * @returns {JSX.Element} 公式编辑器组件
  */
 const FormulaEditor = ({
   fields = [],
   isLoading = false,
-  initialFormula = DEFAULT_FORMULA,
-  onSave,
+  value = DEFAULT_FORMULA,
+  onChange,
   onCancel,
 }) => {
   // 初始化配置系统 - 使用常量中定义的默认值
   const functionConfig = createFunctionConfig(DEFAULT_FUNCTION_CATEGORIES);
 
   // 状态管理
-  const [displayFormula, setDisplayFormula] = useState(
-    initialFormula.display || DEFAULT_FORMULA.display,
-  );
-  const [sourceFormula, setSourceFormula] = useState(
-    initialFormula.source || DEFAULT_FORMULA.source,
-  );
+  const [displayFormula, setDisplayFormula] = useState(value.display || DEFAULT_FORMULA.display);
+  const [sourceFormula, setSourceFormula] = useState(value.source || DEFAULT_FORMULA.source);
   const [cursorPosition, setCursorPosition] = useState(
-    (initialFormula.display || DEFAULT_FORMULA.display).length,
+    (value.display || DEFAULT_FORMULA.display).length,
   );
   const [searchFieldTerm, setSearchFieldTerm] = useState('');
   const [searchFuncTerm, setSearchFuncTerm] = useState('');
@@ -619,6 +616,15 @@ const FormulaEditor = ({
 
   // 引用
   const inputRef = useRef(null);
+
+  // 同步外部value变化
+  useEffect(() => {
+    if (value && (value.display !== displayFormula || value.source !== sourceFormula)) {
+      setDisplayFormula(value.display || DEFAULT_FORMULA.display);
+      setSourceFormula(value.source || DEFAULT_FORMULA.source);
+      validateFormula(isSourceMode ? value.source : value.display);
+    }
+  }, [value]);
 
   // 字段配置相关的函数
   const getDisplayToSourceMap = () => {
@@ -861,18 +867,32 @@ const FormulaEditor = ({
       insertText +
       currentFormula.substring(cursorPosition);
 
+    let newSourceFormula, newDisplayFormula;
+
     if (isSourceMode) {
-      setSourceFormula(newFormula);
-      setDisplayFormula(convertSourceToDisplay(newFormula));
+      newSourceFormula = newFormula;
+      newDisplayFormula = convertSourceToDisplay(newFormula);
+      setSourceFormula(newSourceFormula);
+      setDisplayFormula(newDisplayFormula);
     } else {
-      setDisplayFormula(newFormula);
-      setSourceFormula(convertDisplayToSource(newFormula));
+      newDisplayFormula = newFormula;
+      newSourceFormula = convertDisplayToSource(newFormula);
+      setDisplayFormula(newDisplayFormula);
+      setSourceFormula(newSourceFormula);
     }
 
     setCursorPosition(cursorPosition + insertText.length);
 
     // 验证更新后的公式
     validateFormula(newFormula);
+
+    // 调用onChange通知Form
+    if (onChange) {
+      onChange({
+        display: newDisplayFormula,
+        source: newSourceFormula,
+      });
+    }
   };
 
   // 验证公式格式
@@ -1097,6 +1117,130 @@ const FormulaEditor = ({
     return errors;
   };
 
+  // 切换源码模式
+  const toggleSourceMode = () => {
+    setIsSourceMode(!isSourceMode);
+    validateFormula(isSourceMode ? displayFormula : sourceFormula);
+  };
+
+  // 处理函数点击
+  const handleFunctionClick = (func) => {
+    setSelectedFunction(func);
+
+    // 修改：特殊处理函数插入，确保光标在括号内
+    const functionText = func.name + '()';
+    const cursorOffsetInBrackets = 1; // 右括号前的位置
+
+    const currentFormula = getCurrentFormula();
+    let insertText = functionText;
+
+    // 如果需要，添加逗号
+    if (needsCommaBeforeInsertion()) {
+      insertText = ', ' + insertText;
+    }
+
+    const newFormula =
+      currentFormula.substring(0, cursorPosition) +
+      insertText +
+      currentFormula.substring(cursorPosition);
+
+    // 计算光标应该在的新位置（括号内）
+    const newCursorPosition = cursorPosition + insertText.length - cursorOffsetInBrackets;
+
+    let newSourceFormula, newDisplayFormula;
+
+    if (isSourceMode) {
+      newSourceFormula = newFormula;
+      newDisplayFormula = convertSourceToDisplay(newFormula);
+      setSourceFormula(newSourceFormula);
+      setDisplayFormula(newDisplayFormula);
+    } else {
+      newDisplayFormula = newFormula;
+      newSourceFormula = convertDisplayToSource(newFormula);
+      setDisplayFormula(newDisplayFormula);
+      setSourceFormula(newSourceFormula);
+    }
+
+    // 设置新的光标位置
+    setCursorPosition(newCursorPosition);
+
+    // 更新输入组件中的光标位置
+    setTimeout(() => {
+      if (inputRef.current && inputRef.current.setCaretPosition) {
+        inputRef.current.setCaretPosition(newCursorPosition);
+      }
+    }, 10);
+
+    // 验证更新后的公式
+    validateFormula(newFormula);
+
+    // 调用onChange通知Form
+    if (onChange) {
+      onChange({
+        display: newDisplayFormula,
+        source: newSourceFormula,
+      });
+    }
+  };
+
+  // 处理字段点击
+  const handleFieldClick = (field) => {
+    if (field.type === 'object' && field.fields) {
+      // 对象类型，等待子字段选择
+    } else {
+      insertAtCursor(field.displayName, field.sourceName);
+    }
+  };
+
+  // 处理子字段点击
+  const handleSubfieldClick = (field, subfield) => {
+    const displayText = `${field.displayName}.${subfield.displayName}`;
+    const sourceText = `${field.sourceName}.${subfield.sourceName}`;
+    insertAtCursor(displayText, sourceText);
+  };
+
+  // 处理公式输入变化
+  const handleFormulaChange = (e) => {
+    // 立即规范化逗号
+    const newValue = normalizeCommas(e.target.value);
+
+    let newSourceFormula, newDisplayFormula;
+
+    if (isSourceMode) {
+      newSourceFormula = newValue;
+      newDisplayFormula = convertSourceToDisplay(newValue);
+      setSourceFormula(newSourceFormula);
+      setDisplayFormula(newDisplayFormula);
+    } else {
+      newDisplayFormula = newValue;
+      newSourceFormula = convertDisplayToSource(newValue);
+      setDisplayFormula(newDisplayFormula);
+      setSourceFormula(newSourceFormula);
+    }
+
+    validateFormula(newValue);
+
+    // 调用onChange通知Form
+    if (onChange) {
+      onChange({
+        display: newDisplayFormula,
+        source: newSourceFormula,
+      });
+    }
+  };
+
+  const handleFormulaSelect = (e) => {
+    setCursorPosition(e.target.selectionStart);
+  };
+
+  const handleFunctionHover = (func) => {
+    setHoveredFunction(func);
+  };
+
+  const handleFunctionLeave = () => {
+    setHoveredFunction(null);
+  };
+
   // 计算公式结果
   const calculateFormulaResult = (formula, testData) => {
     try {
@@ -1176,6 +1320,10 @@ const FormulaEditor = ({
     }
   };
 
+  const handleTestDataChange = (e) => {
+    setTestDataInput(e.target.value);
+  };
+
   // 根据公式自动生成测试数据
   const generateTestData = () => {
     if (isLoading || fields.length === 0) return '{}'; // 如果字段正在加载，返回空对象
@@ -1241,108 +1389,6 @@ const FormulaEditor = ({
     return JSON.stringify(testData, null, 2);
   };
 
-  // 事件处理器
-
-  // 切换源码模式
-  const toggleSourceMode = () => {
-    setIsSourceMode(!isSourceMode);
-    validateFormula(isSourceMode ? displayFormula : sourceFormula);
-  };
-
-  // 处理函数点击
-  const handleFunctionClick = (func) => {
-    setSelectedFunction(func);
-
-    // 修改：特殊处理函数插入，确保光标在括号内
-    const functionText = func.name + '()';
-    const cursorOffsetInBrackets = 1; // 右括号前的位置
-
-    const currentFormula = getCurrentFormula();
-    let insertText = functionText;
-
-    // 如果需要，添加逗号
-    if (needsCommaBeforeInsertion()) {
-      insertText = ', ' + insertText;
-    }
-
-    const newFormula =
-      currentFormula.substring(0, cursorPosition) +
-      insertText +
-      currentFormula.substring(cursorPosition);
-
-    // 计算光标应该在的新位置（括号内）
-    const newCursorPosition = cursorPosition + insertText.length - cursorOffsetInBrackets;
-
-    if (isSourceMode) {
-      setSourceFormula(newFormula);
-      setDisplayFormula(convertSourceToDisplay(newFormula));
-    } else {
-      setDisplayFormula(newFormula);
-      setSourceFormula(convertDisplayToSource(newFormula));
-    }
-
-    // 设置新的光标位置
-    setCursorPosition(newCursorPosition);
-
-    // 更新输入组件中的光标位置
-    setTimeout(() => {
-      if (inputRef.current && inputRef.current.setCaretPosition) {
-        inputRef.current.setCaretPosition(newCursorPosition);
-      }
-    }, 10);
-
-    // 验证更新后的公式
-    validateFormula(newFormula);
-  };
-
-  // 处理字段点击
-  const handleFieldClick = (field) => {
-    if (field.type === 'object' && field.fields) {
-      // 对象类型，等待子字段选择
-    } else {
-      insertAtCursor(field.displayName, field.sourceName);
-    }
-  };
-
-  // 处理子字段点击
-  const handleSubfieldClick = (field, subfield) => {
-    const displayText = `${field.displayName}.${subfield.displayName}`;
-    const sourceText = `${field.sourceName}.${subfield.sourceName}`;
-    insertAtCursor(displayText, sourceText);
-  };
-
-  // 处理公式输入变化
-  const handleFormulaChange = (e) => {
-    // 立即规范化逗号
-    const newValue = normalizeCommas(e.target.value);
-
-    if (isSourceMode) {
-      setSourceFormula(newValue);
-      setDisplayFormula(convertSourceToDisplay(newValue));
-    } else {
-      setDisplayFormula(newValue);
-      setSourceFormula(convertDisplayToSource(newValue));
-    }
-
-    validateFormula(newValue);
-  };
-
-  const handleFormulaSelect = (e) => {
-    setCursorPosition(e.target.selectionStart);
-  };
-
-  const handleFunctionHover = (func) => {
-    setHoveredFunction(func);
-  };
-
-  const handleFunctionLeave = () => {
-    setHoveredFunction(null);
-  };
-
-  const handleTestDataChange = (e) => {
-    setTestDataInput(e.target.value);
-  };
-
   // 自动生成测试数据并运行测试
   const handleGenerateTestData = () => {
     const generatedData = generateTestData();
@@ -1360,29 +1406,6 @@ const FormulaEditor = ({
     } catch (error) {
       setTestError(error.message);
       setTestResult(null);
-    }
-  };
-
-  // 保存公式
-  const handleSave = () => {
-    const errors = validateFormula(getCurrentFormula());
-
-    if (errors.length > 0) {
-      messageApi.error(`公式存在 ${errors.length} 个错误，请修正`);
-      return;
-    }
-
-    // 使用传入的onSave回调
-    if (typeof onSave === 'function') {
-      onSave(sourceFormula);
-      messageApi.success('公式已保存');
-    }
-  };
-
-  // 取消编辑
-  const handleCancel = () => {
-    if (typeof onCancel === 'function') {
-      onCancel();
     }
   };
 
@@ -1509,7 +1532,7 @@ const FormulaEditor = ({
                 icon={<ExperimentOutlined />}
                 onClick={showTestModal}
                 className="flex items-center"
-                disabled={validationErrors.length > 0 || isLoading} // 如果有错误或者字段正在加载则禁用测试按钮
+                disabled={validationErrors.length > 0 || isLoading}
               >
                 测试
               </Button>
@@ -1522,17 +1545,19 @@ const FormulaEditor = ({
                 />
               </Space>
             </div>
-            <Button
-              type="text"
-              icon={<CloseOutlined />}
-              className="text-gray-500 hover:text-gray-700"
-              shape="circle"
-              onClick={handleCancel}
-            />
+            {onCancel && (
+              <Button
+                type="text"
+                icon={<CloseOutlined />}
+                className="text-gray-500 hover:text-gray-700"
+                shape="circle"
+                onClick={onCancel}
+              />
+            )}
           </div>
         </div>
 
-        {/* 公式编辑区 - 移到顶部以提高可见度 */}
+        {/* 公式编辑区 */}
         <div className="border-b border-gray-200 p-5 bg-white shadow-sm">
           <div className="mb-2">
             <div className="flex items-center mb-2.5">
@@ -1766,7 +1791,7 @@ const FormulaEditor = ({
             </div>
           </div>
 
-          {/* 右栏 - 函数详情 - 添加淡入动画效果 */}
+          {/* 右栏 - 函数详情 */}
           <div
             className="w-1/3 flex flex-col h-full bg-white"
             style={{ height: `${PANEL_HEIGHT}px` }}
@@ -1874,26 +1899,15 @@ const FormulaEditor = ({
           </div>
         </div>
 
-        {/* 底部 */}
-        <div className="flex justify-end p-4 border-t border-gray-200 bg-white">
-          <Button
-            className="mr-3"
-            onClick={handleCancel}
-          >
-            取消
-          </Button>
-          <Button
-            type="primary"
-            className="bg-indigo-600 hover:bg-indigo-700"
-            onClick={handleSave}
-            disabled={validationErrors.length > 0 || isLoading}
-          >
-            确认
-          </Button>
-        </div>
+        {/* 底部 - 移除确认按钮，只保留取消按钮（如果有必要） */}
+        {onCancel && (
+          <div className="flex justify-end p-4 border-t border-gray-200 bg-white">
+            <Button onClick={onCancel}>取消</Button>
+          </div>
+        )}
       </div>
 
-      {/* 改进后的测试模态窗口 - 自动执行测试 */}
+      {/* 测试模态窗口 */}
       <TestModal
         visible={testModalVisible}
         onCancel={hideTestModal}

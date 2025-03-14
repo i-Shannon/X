@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Spin, message, Divider, Card, Space } from 'antd';
+import { Button, Spin, message, Divider, Card, Space, Form } from 'antd';
 import FormulaEditor from './components/FormulaEditor';
 
 const App = () => {
+  // 创建表单实例
+  const [form] = Form.useForm();
   const [fields, setFields] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [savedFormula, setSavedFormula] = useState('');
@@ -47,11 +49,21 @@ const App = () => {
     }
   };
 
-  // 处理公式保存
-  const handleSaveFormula = (formula) => {
-    console.log('保存的公式:', formula);
-    setSavedFormula(formula);
-    message.success('公式已保存');
+  // 监听表单值变化
+  const handleFormValuesChange = (changedValues) => {
+    if (changedValues.calculationFormula) {
+      // 更新保存的公式
+      setSavedFormula(changedValues.calculationFormula.source);
+    }
+  };
+
+  // 重置按钮处理函数 - 重置表单到初始值
+  const handleResetForm = () => {
+    form.resetFields();
+    // 获取重置后的初始值并更新显示
+    const initialFormula = form.getFieldValue('calculationFormula');
+    setSavedFormula(initialFormula.source);
+    message.success('公式已重置为初始值');
   };
 
   // 重新加载字段数据
@@ -73,6 +85,12 @@ const App = () => {
           >
             重新加载字段数据
           </Button>
+          <Button
+            className="ml-3"
+            onClick={handleResetForm}
+          >
+            重置
+          </Button>
           <span className="ml-3 text-gray-500">
             {isLoading ? '加载中...' : `已加载 ${fields.length} 个字段`}
           </span>
@@ -92,16 +110,26 @@ const App = () => {
         className="shadow-md"
         bodyStyle={{ padding: 0 }}
       >
-        <FormulaEditor
-          fields={fields}
-          isLoading={isLoading}
-          initialFormula={{
-            display: 'ADD(1, 1)',
-            source: 'ADD(1, 1',
+        <Form
+          form={form}
+          initialValues={{
+            calculationFormula: {
+              display: 'ADD(1, 1)',
+              source: 'ADD(1, 1)',
+            },
           }}
-          onSave={handleSaveFormula}
-          onCancel={() => {}}
-        />
+          onValuesChange={handleFormValuesChange}
+        >
+          <Form.Item
+            name="calculationFormula"
+            noStyle
+          >
+            <FormulaEditor
+              fields={fields}
+              isLoading={isLoading}
+            />
+          </Form.Item>
+        </Form>
       </Card>
 
       {savedFormula && (

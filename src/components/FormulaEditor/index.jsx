@@ -1379,10 +1379,10 @@ const FormulaEditor = () => {
     const errors = validateFormula(getCurrentFormula());
 
     if (errors.length > 0) {
-      messageApi.error(`公式存在 ${errors.length} 个错误，请修正后再提交`);
+      messageApi.error(`公式存在 ${errors.length} 个错误，请修正`);
     } else {
       console.log('公式(源码格式):', sourceFormula);
-      messageApi.success('公式格式正确！已打印到控制台');
+      messageApi.success('已打印到控制台');
     }
   };
 

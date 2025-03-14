@@ -13,6 +13,7 @@ import {
   Empty,
   message,
   Alert,
+  Spin,
 } from 'antd';
 import {
   SearchOutlined,
@@ -23,118 +24,28 @@ import {
   CaretDownOutlined,
   FileTextOutlined,
   FunctionOutlined,
-  EyeOutlined,
-  CalculatorOutlined,
   CodeOutlined,
   PlusOutlined,
   ExperimentOutlined,
+  LoadingOutlined,
+  CalculatorOutlined,
 } from '@ant-design/icons';
+
+// 导入常量
+import {
+  PANEL_HEIGHT,
+  DEFAULT_FUNCTION_CATEGORIES,
+  FIELD_TYPE_CONFIG,
+  DEFAULT_FORMULA,
+  DEFAULT_TEST_DATA,
+} from './constants';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 // 函数配置系统 - 允许动态添加函数
-const createFunctionConfig = () => {
-  // 默认函数类别和定义
-  const defaultFunctionCategories = [
-    {
-      name: '基础运算',
-      functions: [
-        {
-          name: 'ADD',
-          description: '加法运算',
-          syntax: 'ADD(num1, num2, ...)',
-          example: 'ADD(1, 2, 3) = 6',
-          minParams: 2,
-          maxParams: null,
-          paramTypes: ['number'],
-          evaluate: (...args) => args.reduce((sum, val) => sum + val, 0),
-        },
-        {
-          name: 'SUBTRACT',
-          description: '减法运算',
-          syntax: 'SUBTRACT(num1, num2)',
-          example: 'SUBTRACT(5, 3) = 2',
-          minParams: 2,
-          maxParams: 2,
-          paramTypes: ['number'],
-          evaluate: (a, b) => a - b,
-        },
-        {
-          name: 'MULTIPLY',
-          description: '乘法运算',
-          syntax: 'MULTIPLY(num1, num2, ...)',
-          example: 'MULTIPLY(2, 3, 4) = 24',
-          minParams: 2,
-          maxParams: null,
-          paramTypes: ['number'],
-          evaluate: (...args) => args.reduce((product, val) => product * val, 1),
-        },
-        {
-          name: 'DIVIDE',
-          description: '除法运算',
-          syntax: 'DIVIDE(num1, num2)',
-          example: 'DIVIDE(10, 2) = 5',
-          minParams: 2,
-          maxParams: 2,
-          paramTypes: ['number'],
-          evaluate: (a, b) => (b !== 0 ? a / b : 'Error: Division by zero'),
-        },
-      ],
-    },
-    {
-      name: '逻辑函数',
-      functions: [
-        {
-          name: 'IF',
-          description: '条件判断，如果条件为真返回第一个值，否则返回第二个值',
-          syntax: 'IF(condition, value_if_true, value_if_false)',
-          example: 'IF(GT(5, 3), "Yes", "No") = "Yes"',
-          minParams: 3,
-          maxParams: 3,
-          paramTypes: ['boolean', 'any', 'any'],
-          evaluate: (condition, trueVal, falseVal) => (condition ? trueVal : falseVal),
-        },
-        {
-          name: 'AND',
-          description: '逻辑与，所有参数都为真时返回真',
-          syntax: 'AND(logical1, logical2, ...)',
-          example: 'AND(true, true, false) = false',
-          minParams: 2,
-          maxParams: null,
-          paramTypes: ['boolean'],
-          evaluate: (...args) => args.every(Boolean),
-        },
-        {
-          name: 'OR',
-          description: '逻辑或，任一参数为真时返回真',
-          syntax: 'OR(logical1, logical2, ...)',
-          example: 'OR(false, true, false) = true',
-          minParams: 2,
-          maxParams: null,
-          paramTypes: ['boolean'],
-          evaluate: (...args) => args.some(Boolean),
-        },
-      ],
-    },
-    {
-      name: '文本函数',
-      functions: [
-        {
-          name: 'CONCATENATE',
-          description: '连接多个文本字符串',
-          syntax: 'CONCATENATE(text1, text2, ...)',
-          example: 'CONCATENATE("Hello", " ", "World") = "Hello World"',
-          minParams: 1,
-          maxParams: null,
-          paramTypes: ['string'],
-          evaluate: (...args) => args.join(''),
-        },
-      ],
-    },
-  ];
-
-  let functionCategories = [...defaultFunctionCategories];
+const createFunctionConfig = (initialCategories = []) => {
+  let functionCategories = [...initialCategories];
 
   // 添加新函数类别的方法
   const addCategory = (category) => {
@@ -179,150 +90,16 @@ const createFunctionConfig = () => {
   };
 };
 
-// 字段配置系统
-const createFieldConfig = () => {
-  // 默认字段定义
-  const defaultFields = [
-    { displayName: '文章名', sourceName: 'title', type: '文本' },
-    { displayName: '作者', sourceName: 'author', type: '文本' },
-    { displayName: '售价', sourceName: 'price', type: '数字' },
-    { displayName: '版本号', sourceName: 'version', type: '数字' },
-    {
-      displayName: '人员对象',
-      sourceName: 'person',
-      type: 'object',
-      fields: [
-        { displayName: 'ID', sourceName: 'id', type: '数字' },
-        { displayName: '姓名', sourceName: 'name', type: '文本' },
-        { displayName: '数量', sourceName: 'count', type: '数字' },
-      ],
-    },
-  ];
-
-  let formFields = [...defaultFields];
-
-  // 添加新字段的方法
-  const addField = (field) => {
-    formFields.push(field);
-  };
-
-  // 向已有对象字段添加子字段的方法
-  const addSubfield = (parentFieldName, subfield) => {
-    const field = formFields.find(
-      (f) => f.displayName === parentFieldName || f.sourceName === parentFieldName,
-    );
-
-    if (field && field.type === 'object') {
-      if (!field.fields) field.fields = [];
-      field.fields.push(subfield);
-    }
-  };
-
-  // 获取所有字段的方法
-  const getFields = () => {
-    return formFields;
-  };
-
-  // 构建显示名/源名映射
-  const getDisplayToSourceMap = () => {
-    const map = {};
-
-    formFields.forEach((field) => {
-      map[field.displayName] = field.sourceName;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[
-            `${field.displayName}.${subfield.displayName}`
-          ] = `${field.sourceName}.${subfield.sourceName}`;
-        });
-      }
-    });
-
-    return map;
-  };
-
-  // 构建源名/显示名映射
-  const getSourceToDisplayMap = () => {
-    const map = {};
-
-    formFields.forEach((field) => {
-      map[field.sourceName] = field.displayName;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[
-            `${field.sourceName}.${subfield.sourceName}`
-          ] = `${field.displayName}.${subfield.displayName}`;
-        });
-      }
-    });
-
-    return map;
-  };
-
-  // 构建字段类型映射
-  const getFieldTypeMap = () => {
-    const map = {};
-
-    formFields.forEach((field) => {
-      // 添加显示名和源名映射
-      map[field.displayName] = field.type;
-      map[field.sourceName] = field.type;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[`${field.displayName}.${subfield.displayName}`] = subfield.type;
-          map[`${field.sourceName}.${subfield.sourceName}`] = subfield.type;
-        });
-      }
-    });
-
-    return map;
-  };
-
-  return {
-    addField,
-    addSubfield,
-    getFields,
-    getDisplayToSourceMap,
-    getSourceToDisplayMap,
-    getFieldTypeMap,
-  };
-};
-
 // 类型标签组件，用于一致地渲染类型指示器
 const TypeBadge = ({ type }) => {
-  let color, label;
-
-  switch (type) {
-    case '数字':
-      color = 'blue';
-      label = '数字';
-      break;
-    case '文本':
-      color = 'green';
-      label = '文本';
-      break;
-    case '时间':
-      color = 'purple';
-      label = '时间';
-      break;
-    case 'object':
-      color = 'default';
-      label = '对象';
-      break;
-    default:
-      color = 'default';
-      label = type;
-  }
+  const typeConfig = FIELD_TYPE_CONFIG[type] || { color: 'default', label: type };
 
   return (
     <Tag
-      color={color}
+      color={typeConfig.color}
       className="rounded-sm px-1.5 py-0 text-xs font-medium"
     >
-      {label}
+      {typeConfig.label}
     </Tag>
   );
 };
@@ -781,41 +558,158 @@ const TestModal = ({
   );
 };
 
-// 配置常量
-const PANEL_HEIGHT = 500; // 三栏布局高度（像素）
+// 字段加载状态组件
+const FieldsLoadingState = () => (
+  <div className="flex flex-col items-center justify-center h-full py-10">
+    <Spin
+      indicator={
+        <LoadingOutlined
+          style={{ fontSize: 24 }}
+          spin
+        />
+      }
+      className="mb-4"
+    />
+    <div className="text-gray-500">加载字段数据中...</div>
+  </div>
+);
 
-const FormulaEditor = () => {
-  // 初始化配置系统
-  const functionConfig = createFunctionConfig();
-  const fieldConfig = createFieldConfig();
-
-  // 获取所有映射
-  const displayToSourceMap = fieldConfig.getDisplayToSourceMap();
-  const sourceToDisplayMap = fieldConfig.getSourceToDisplayMap();
-  const fieldTypeMap = fieldConfig.getFieldTypeMap();
+/**
+ * 公式编辑器组件
+ * @param {Object} props 组件属性
+ * @param {Array} props.fields 表单字段数组
+ * @param {boolean} props.isLoading 是否正在加载字段数据
+ * @param {string} props.initialFormula 初始公式（可选，默认使用DEFAULT_FORMULA）
+ * @param {Function} props.onSave 保存公式的回调函数，参数为公式字符串
+ * @param {Function} props.onCancel 取消编辑的回调函数（可选）
+ * @returns {JSX.Element} 公式编辑器组件
+ */
+const FormulaEditor = ({
+  fields = [],
+  isLoading = false,
+  initialFormula = DEFAULT_FORMULA,
+  onSave,
+  onCancel,
+}) => {
+  // 初始化配置系统 - 使用常量中定义的默认值
+  const functionConfig = createFunctionConfig(DEFAULT_FUNCTION_CATEGORIES);
 
   // 状态管理
-  const [displayFormula, setDisplayFormula] = useState('ADD(1, 人员对象.ID)'); // 从SUM修改为ADD
-  const [sourceFormula, setSourceFormula] = useState('ADD(1, person.id)'); // 从SUM修改为ADD
-  const [cursorPosition, setCursorPosition] = useState(displayFormula.length);
+  const [displayFormula, setDisplayFormula] = useState(
+    initialFormula.display || DEFAULT_FORMULA.display,
+  );
+  const [sourceFormula, setSourceFormula] = useState(
+    initialFormula.source || DEFAULT_FORMULA.source,
+  );
+  const [cursorPosition, setCursorPosition] = useState(
+    (initialFormula.display || DEFAULT_FORMULA.display).length,
+  );
   const [searchFieldTerm, setSearchFieldTerm] = useState('');
   const [searchFuncTerm, setSearchFuncTerm] = useState('');
   const [selectedFunction, setSelectedFunction] = useState(null);
   const [hoveredFunction, setHoveredFunction] = useState(null);
   const [isSourceMode, setIsSourceMode] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
-  const [testDataInput, setTestDataInput] = useState(
-    '{ "person": { "id": 123, "count": 5 }, "price": 25, "version": 2 }',
-  );
+  const [testDataInput, setTestDataInput] = useState(DEFAULT_TEST_DATA);
   const [testResult, setTestResult] = useState(null);
   const [testError, setTestError] = useState(null);
   const [testModalVisible, setTestModalVisible] = useState(false);
-  const [autoTest, setAutoTest] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
-  // 跟踪函数类别展开状态
   const [expandedCategories, setExpandedCategories] = useState({});
 
-  const formulaInputRef = useRef(null);
+  // 引用
+  const inputRef = useRef(null);
+
+  // 字段配置相关的函数
+  const getDisplayToSourceMap = () => {
+    const map = {};
+
+    fields.forEach((field) => {
+      map[field.displayName] = field.sourceName;
+
+      if (field.type === 'object' && field.fields) {
+        field.fields.forEach((subfield) => {
+          map[
+            `${field.displayName}.${subfield.displayName}`
+          ] = `${field.sourceName}.${subfield.sourceName}`;
+        });
+      }
+    });
+
+    return map;
+  };
+
+  const getSourceToDisplayMap = () => {
+    const map = {};
+
+    fields.forEach((field) => {
+      map[field.sourceName] = field.displayName;
+
+      if (field.type === 'object' && field.fields) {
+        field.fields.forEach((subfield) => {
+          map[
+            `${field.sourceName}.${subfield.sourceName}`
+          ] = `${field.displayName}.${subfield.displayName}`;
+        });
+      }
+    });
+
+    return map;
+  };
+
+  const getFieldTypeMap = () => {
+    const map = {};
+
+    fields.forEach((field) => {
+      // 添加显示名和源名映射
+      map[field.displayName] = field.type;
+      map[field.sourceName] = field.type;
+
+      if (field.type === 'object' && field.fields) {
+        field.fields.forEach((subfield) => {
+          map[`${field.displayName}.${subfield.displayName}`] = subfield.type;
+          map[`${field.sourceName}.${subfield.sourceName}`] = subfield.type;
+        });
+      }
+    });
+
+    return map;
+  };
+
+  // 初始化函数类别和CSS动画
+  useEffect(() => {
+    // 初始化所有函数类别为展开状态
+    const categories = {};
+    functionConfig.getCategories().forEach((category) => {
+      categories[category.name] = true; // 默认展开
+    });
+    setExpandedCategories(categories);
+
+    // 添加CSS动画
+    const style = document.createElement('style');
+    style.textContent = `
+      .animate-fadeIn {
+        animation: fadeIn 0.3s ease-in-out;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // 在字段数据变化时重新验证公式
+  useEffect(() => {
+    if (!isLoading && fields.length > 0) {
+      validateFormula(isSourceMode ? sourceFormula : displayFormula);
+    }
+  }, [fields, isLoading]);
 
   // 切换函数类别展开/收起状态
   const toggleCategoryExpand = (category) => {
@@ -839,11 +733,14 @@ const FormulaEditor = () => {
 
   // 将显示公式转换为源码公式
   const convertDisplayToSource = (formula) => {
+    if (isLoading || fields.length === 0) return formula; // 如果字段正在加载，不执行转换
+
     let result = formula;
     // 先规范化逗号
     result = normalizeCommas(result);
 
     // 按长度排序键（最长的先）以防止部分匹配
+    const displayToSourceMap = getDisplayToSourceMap();
     const keys = Object.keys(displayToSourceMap).sort((a, b) => b.length - a.length);
 
     for (const key of keys) {
@@ -857,11 +754,14 @@ const FormulaEditor = () => {
 
   // 将源码公式转换为显示公式
   const convertSourceToDisplay = (formula) => {
+    if (isLoading || fields.length === 0) return formula; // 如果字段正在加载，不执行转换
+
     let result = formula;
     // 先规范化逗号
     result = normalizeCommas(result);
 
     // 按长度排序键（最长的先）以防止部分匹配
+    const sourceToDisplayMap = getSourceToDisplayMap();
     const keys = Object.keys(sourceToDisplayMap).sort((a, b) => b.length - a.length);
 
     for (const key of keys) {
@@ -886,7 +786,10 @@ const FormulaEditor = () => {
 
   // 检查参数类型是否对函数有效
   const isParameterTypeValid = (paramValue, expectedType) => {
+    if (isLoading || fields.length === 0) return true; // 如果字段正在加载，暂时返回true
+
     const cleanedValue = paramValue.trim();
+    const fieldTypeMap = getFieldTypeMap();
 
     switch (expectedType) {
       case 'number':
@@ -904,7 +807,10 @@ const FormulaEditor = () => {
 
   // 检查变量引用是否有效
   const isVariableValid = (variable) => {
+    if (isLoading || fields.length === 0) return true; // 如果字段正在加载，暂时返回true
+
     const cleanedVar = variable.trim();
+    const fieldTypeMap = getFieldTypeMap();
 
     if (isNumericLiteral(cleanedVar)) return true;
     if (isBooleanLiteral(cleanedVar)) return true;
@@ -965,24 +871,16 @@ const FormulaEditor = () => {
 
     setCursorPosition(cursorPosition + insertText.length);
 
-    // 聚焦输入框并更新光标位置
-    if (formulaInputRef.current) {
-      setTimeout(() => {
-        formulaInputRef.current.focus();
-        formulaInputRef.current.setSelectionRange(
-          cursorPosition + insertText.length,
-          cursorPosition + insertText.length,
-        );
-      }, 0);
-    }
-
     // 验证更新后的公式
     validateFormula(newFormula);
   };
 
   // 验证公式格式
   const validateFormula = (formula) => {
+    if (isLoading || fields.length === 0) return []; // 如果字段正在加载，不执行验证
+
     const errors = [];
+    const fieldTypeMap = getFieldTypeMap();
 
     // 检查括号匹配
     const stack = [];
@@ -1185,15 +1083,16 @@ const FormulaEditor = () => {
 
   // 根据公式自动生成测试数据
   const generateTestData = () => {
+    if (isLoading || fields.length === 0) return '{}'; // 如果字段正在加载，返回空对象
+
     const formula = sourceFormula;
     const testData = {};
 
     // 提取字段引用
     const fieldReferences = [];
-    const allFields = fieldConfig.getFields();
 
     // 检查基本字段引用
-    allFields.forEach((field) => {
+    fields.forEach((field) => {
       if (formula.includes(field.sourceName)) {
         fieldReferences.push(field);
       }
@@ -1294,8 +1193,6 @@ const FormulaEditor = () => {
     setTimeout(() => {
       if (inputRef.current && inputRef.current.setCaretPosition) {
         inputRef.current.setCaretPosition(newCursorPosition);
-      } else if (formulaInputRef.current && formulaInputRef.current.setCaretPosition) {
-        formulaInputRef.current.setCaretPosition(newCursorPosition);
       }
     }, 10);
 
@@ -1318,9 +1215,6 @@ const FormulaEditor = () => {
     const sourceText = `${field.sourceName}.${subfield.sourceName}`;
     insertAtCursor(displayText, sourceText);
   };
-
-  // 向HighlightedFormulaInput组件传递ref
-  const inputRef = useRef(null);
 
   // 处理公式输入变化
   const handleFormulaChange = (e) => {
@@ -1374,15 +1268,26 @@ const FormulaEditor = () => {
     }
   };
 
-  // 最终提交的公式
-  const handleConfirm = () => {
+  // 保存公式
+  const handleSave = () => {
     const errors = validateFormula(getCurrentFormula());
 
     if (errors.length > 0) {
       messageApi.error(`公式存在 ${errors.length} 个错误，请修正`);
-    } else {
-      console.log('公式(源码格式):', sourceFormula);
-      messageApi.success('已打印到控制台');
+      return;
+    }
+
+    // 使用传入的onSave回调
+    if (typeof onSave === 'function') {
+      onSave(sourceFormula);
+      messageApi.success('公式已保存');
+    }
+  };
+
+  // 取消编辑
+  const handleCancel = () => {
+    if (typeof onCancel === 'function') {
+      onCancel();
     }
   };
 
@@ -1398,7 +1303,7 @@ const FormulaEditor = () => {
   };
 
   const getFilteredFields = () => {
-    const fields = fieldConfig.getFields();
+    if (isLoading) return [];
 
     if (!searchFieldTerm) return fields;
 
@@ -1422,7 +1327,8 @@ const FormulaEditor = () => {
 
   // 获取字段和函数的高亮模式
   const getHighlightPattern = () => {
-    const fields = fieldConfig.getFields();
+    if (isLoading || fields.length === 0) return null;
+
     const fieldPatterns = [];
 
     if (isSourceMode) {
@@ -1486,35 +1392,7 @@ const FormulaEditor = () => {
     return grouped;
   };
 
-  useEffect(() => {
-    validateFormula(displayFormula);
-
-    // 初始化所有函数类别为展开状态
-    const categories = {};
-    functionConfig.getCategories().forEach((category) => {
-      categories[category.name] = true; // 默认展开
-    });
-    setExpandedCategories(categories);
-
-    // 添加CSS动画
-    const style = document.createElement('style');
-    style.textContent = `
-      .animate-fadeIn {
-        animation: fadeIn 0.3s ease-in-out;
-      }
-      
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-    `;
-    document.head.appendChild(style);
-
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
-
+  // 获取筛选后的字段列表
   const filteredFields = getFilteredFields();
 
   return (
@@ -1531,15 +1409,15 @@ const FormulaEditor = () => {
           </Typography.Title>
           <div className="flex items-center">
             <div className="mr-6 flex items-center space-x-4">
-              {/* <Button
+              <Button
                 type="default"
                 icon={<ExperimentOutlined />}
                 onClick={showTestModal}
                 className="flex items-center"
-                disabled={validationErrors.length > 0} // 如果有错误则禁用测试按钮
+                disabled={validationErrors.length > 0 || isLoading} // 如果有错误或者字段正在加载则禁用测试按钮
               >
                 测试
-              </Button> */}
+              </Button>
               <Space>
                 <Text className="text-sm font-medium text-gray-700">源码模式</Text>
                 <Switch
@@ -1554,6 +1432,7 @@ const FormulaEditor = () => {
               icon={<CloseOutlined />}
               className="text-gray-500 hover:text-gray-700"
               shape="circle"
+              onClick={handleCancel}
             />
           </div>
         </div>
@@ -1588,6 +1467,14 @@ const FormulaEditor = () => {
                   </Tag>
                 </Tooltip>
               )}
+              {isLoading && (
+                <Tag
+                  icon={<LoadingOutlined spin />}
+                  color="processing"
+                >
+                  加载字段中...
+                </Tag>
+              )}
             </div>
 
             <HighlightedFormulaInput
@@ -1613,6 +1500,7 @@ const FormulaEditor = () => {
               <div className="font-medium text-gray-800 mb-2.5 flex items-center">
                 <FileTextOutlined className="mr-1.5 text-indigo-500" />
                 <span>表单字段</span>
+                {isLoading && <LoadingOutlined className="ml-2 text-blue-500" />}
               </div>
               <div className="relative">
                 <Input
@@ -1622,70 +1510,80 @@ const FormulaEditor = () => {
                   value={searchFieldTerm}
                   onChange={(e) => setSearchFieldTerm(e.target.value)}
                   allowClear
+                  disabled={isLoading}
                 />
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
-              {filteredFields.map((field, index) => (
-                <Card
-                  key={index}
-                  size="small"
-                  className="border border-gray-200 hover:shadow-md transition-all cursor-pointer"
-                  bodyStyle={{ padding: '8px 12px' }}
-                >
-                  <div onClick={() => handleFieldClick(field)}>
-                    <div className="flex justify-between items-center">
-                      <div className="flex flex-col">
-                        <Text
-                          strong
-                          className="text-gray-800"
-                        >
-                          {isSourceMode ? field.sourceName : field.displayName}
-                        </Text>
-                        {!isSourceMode && (
+              {isLoading ? (
+                <FieldsLoadingState />
+              ) : filteredFields.length > 0 ? (
+                filteredFields.map((field, index) => (
+                  <Card
+                    key={index}
+                    size="small"
+                    className="border border-gray-200 hover:shadow-md transition-all cursor-pointer"
+                    bodyStyle={{ padding: '8px 12px' }}
+                  >
+                    <div onClick={() => handleFieldClick(field)}>
+                      <div className="flex justify-between items-center">
+                        <div className="flex flex-col">
                           <Text
-                            type="secondary"
-                            className="text-xs mt-0.5"
+                            strong
+                            className="text-gray-800"
                           >
-                            {field.sourceName}
+                            {isSourceMode ? field.sourceName : field.displayName}
                           </Text>
-                        )}
+                          {!isSourceMode && (
+                            <Text
+                              type="secondary"
+                              className="text-xs mt-0.5"
+                            >
+                              {field.sourceName}
+                            </Text>
+                          )}
+                        </div>
+                        <TypeBadge type={field.type} />
                       </div>
-                      <TypeBadge type={field.type} />
                     </div>
-                  </div>
 
-                  {field.type === 'object' && field.fields && (
-                    <div className="mt-1.5 pt-1.5 border-t border-gray-200 bg-gray-50 rounded-md px-2 py-0.5">
-                      <div className="space-y-1">
-                        {field.fields.map((subfield, subIndex) => (
-                          <div
-                            key={subIndex}
-                            className="py-1 px-1.5 rounded-md hover:bg-white cursor-pointer flex justify-between items-center transition-colors"
-                            onClick={() => handleSubfieldClick(field, subfield)}
-                          >
-                            <div className="flex flex-col">
-                              <Text className="text-gray-800 text-sm">
-                                {isSourceMode ? subfield.sourceName : subfield.displayName}
-                              </Text>
-                              {!isSourceMode && (
-                                <Text
-                                  type="secondary"
-                                  className="text-xs mt-0.5"
-                                >
-                                  {subfield.sourceName}
+                    {field.type === 'object' && field.fields && (
+                      <div className="mt-1.5 pt-1.5 border-t border-gray-200 bg-gray-50 rounded-md px-2 py-0.5">
+                        <div className="space-y-1">
+                          {field.fields.map((subfield, subIndex) => (
+                            <div
+                              key={subIndex}
+                              className="py-1 px-1.5 rounded-md hover:bg-white cursor-pointer flex justify-between items-center transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation(); // 防止冒泡触发父级的点击事件
+                                handleSubfieldClick(field, subfield);
+                              }}
+                            >
+                              <div className="flex flex-col">
+                                <Text className="text-gray-800 text-sm">
+                                  {isSourceMode ? subfield.sourceName : subfield.displayName}
                                 </Text>
-                              )}
+                                {!isSourceMode && (
+                                  <Text
+                                    type="secondary"
+                                    className="text-xs mt-0.5"
+                                  >
+                                    {subfield.sourceName}
+                                  </Text>
+                                )}
+                              </div>
+                              <TypeBadge type={subfield.type} />
                             </div>
-                            <TypeBadge type={subfield.type} />
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
+                    )}
+                  </Card>
+                ))
+              ) : (
+                <Empty description="未找到匹配的字段" />
+              )}
             </div>
           </div>
 
@@ -1892,11 +1790,17 @@ const FormulaEditor = () => {
 
         {/* 底部 */}
         <div className="flex justify-end p-4 border-t border-gray-200 bg-white">
-          <Button className="mr-3">取消</Button>
+          <Button
+            className="mr-3"
+            onClick={handleCancel}
+          >
+            取消
+          </Button>
           <Button
             type="primary"
             className="bg-indigo-600 hover:bg-indigo-700"
-            onClick={handleConfirm}
+            onClick={handleSave}
+            disabled={validationErrors.length > 0 || isLoading}
           >
             确认
           </Button>
@@ -1904,7 +1808,7 @@ const FormulaEditor = () => {
       </div>
 
       {/* 改进后的测试模态窗口 - 自动执行测试 */}
-      {/* <TestModal
+      <TestModal
         visible={testModalVisible}
         onCancel={hideTestModal}
         onTest={testFormula}
@@ -1915,7 +1819,7 @@ const FormulaEditor = () => {
         testResult={testResult}
         testError={testError}
         validationErrors={validationErrors}
-      /> */}
+      />
     </>
   );
 };

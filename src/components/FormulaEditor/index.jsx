@@ -1467,14 +1467,6 @@ const FormulaEditor = ({
                   </Tag>
                 </Tooltip>
               )}
-              {isLoading && (
-                <Tag
-                  icon={<LoadingOutlined spin />}
-                  color="processing"
-                >
-                  加载字段中...
-                </Tag>
-              )}
             </div>
 
             <HighlightedFormulaInput
@@ -1500,7 +1492,6 @@ const FormulaEditor = ({
               <div className="font-medium text-gray-800 mb-2.5 flex items-center">
                 <FileTextOutlined className="mr-1.5 text-indigo-500" />
                 <span>表单字段</span>
-                {isLoading && <LoadingOutlined className="ml-2 text-blue-500" />}
               </div>
               <div className="relative">
                 <Input

@@ -1876,7 +1876,7 @@ const FormulaEditor = ({
                     key={index}
                     size="small"
                     className="border border-gray-200 hover:shadow-md transition-all cursor-pointer"
-                    bodyStyle={{ padding: '8px 12px' }}
+                    styles={{ body: { padding: '8px 12px' } }}
                   >
                     <div onClick={() => handleFieldClick(field)}>
                       <div className="flex justify-between items-center">
@@ -2006,7 +2006,7 @@ const FormulaEditor = ({
                               onClick={() => handleFunctionClick(func)}
                               onMouseEnter={() => handleFunctionHover(func)}
                               onMouseLeave={handleFunctionLeave}
-                              bodyStyle={{ padding: '6px 10px' }}
+                              styles={{ body: { padding: '6px 10px' } }}
                             >
                               <div className="flex items-center">
                                 <Text

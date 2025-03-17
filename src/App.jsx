@@ -108,7 +108,7 @@ const App = () => {
 
       <Card
         className="shadow-md"
-        bodyStyle={{ padding: 0 }}
+        styles={{ body: { padding: 0 } }}
       >
         <Form
           form={form}

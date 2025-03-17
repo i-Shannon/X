@@ -32,6 +32,7 @@ import {
   CalculatorOutlined,
   AlertOutlined,
   ExclamationCircleOutlined,
+  BranchesOutlined,
 } from '@ant-design/icons';
 
 // 导入常量
@@ -42,6 +43,7 @@ import {
   DEFAULT_FORMULA,
   DEFAULT_TEST_DATA,
   TYPE_MAP,
+  TYPE_DISPLAY_MAP,
 } from './constants';
 
 const { Title, Text, Paragraph } = Typography;
@@ -476,8 +478,12 @@ const ErrorPopoverContent = ({ errors }) => {
                   error.expectedType &&
                   error.actualType && (
                     <div className="mt-1.5 text-xs">
-                      <Tag color="blue">期望: {error.expectedType}</Tag>
-                      <Tag color="orange">实际: {error.actualType}</Tag>
+                      <Tag color="blue">
+                        期望: {TYPE_DISPLAY_MAP[error.expectedType] || error.expectedType}
+                      </Tag>
+                      <Tag color="orange">
+                        实际: {TYPE_DISPLAY_MAP[error.actualType] || error.actualType}
+                      </Tag>
                     </div>
                   )}
               </div>
@@ -577,7 +583,7 @@ const TestModal = ({
           onChange={onTestDataChange}
           className="w-full font-mono text-sm"
           rows={6}
-          placeholder='例如: { "person": { "id": 123 } }'
+          placeholder='例如: { "price": 25 }'
         />
       </div>
 
@@ -678,16 +684,9 @@ const FormulaEditor = ({
   const getDisplayToSourceMap = () => {
     const map = {};
 
+    // 不再支持对象类型字段
     fields.forEach((field) => {
       map[field.displayName] = field.sourceName;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[
-            `${field.displayName}.${subfield.displayName}`
-          ] = `${field.sourceName}.${subfield.sourceName}`;
-        });
-      }
     });
 
     return map;
@@ -696,16 +695,9 @@ const FormulaEditor = ({
   const getSourceToDisplayMap = () => {
     const map = {};
 
+    // 不再支持对象类型字段
     fields.forEach((field) => {
       map[field.sourceName] = field.displayName;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[
-            `${field.sourceName}.${subfield.sourceName}`
-          ] = `${field.displayName}.${subfield.displayName}`;
-        });
-      }
     });
 
     return map;
@@ -714,17 +706,11 @@ const FormulaEditor = ({
   const getFieldTypeMap = () => {
     const map = {};
 
+    // 不再支持对象类型字段
     fields.forEach((field) => {
       // 添加显示名和源名映射
       map[field.displayName] = field.type;
       map[field.sourceName] = field.type;
-
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          map[`${field.displayName}.${subfield.displayName}`] = subfield.type;
-          map[`${field.sourceName}.${subfield.sourceName}`] = subfield.type;
-        });
-      }
     });
 
     return map;
@@ -943,6 +929,66 @@ const FormulaEditor = ({
     }
   };
 
+  // 获取类型的中文名称
+  const getChineseTypeName = (technicalType) => {
+    return TYPE_DISPLAY_MAP[technicalType] || technicalType;
+  };
+
+  // 解析参数列表的辅助函数，考虑嵌套函数调用和末尾逗号
+  const parseParameters = (paramsText) => {
+    if (!paramsText.trim()) return [];
+
+    // 检查末尾是否有逗号
+    const hasTrailingComma = paramsText.trim().endsWith(',');
+
+    const params = [];
+    let currentParam = '';
+    let openBrackets = 0;
+    let inQuote = false;
+
+    for (let i = 0; i < paramsText.length; i++) {
+      const char = paramsText[i];
+
+      // 处理引号内的文本（不处理转义情况，简化起见）
+      if (char === '"' && (i === 0 || paramsText[i - 1] !== '\\')) {
+        inQuote = !inQuote;
+        currentParam += char;
+        continue;
+      }
+
+      if (inQuote) {
+        currentParam += char;
+        continue;
+      }
+
+      if (char === '(') {
+        openBrackets++;
+        currentParam += char;
+      } else if (char === ')') {
+        openBrackets--;
+        currentParam += char;
+      } else if (char === ',' && openBrackets === 0) {
+        // 只有在不在嵌套函数内部时，才将逗号视为参数分隔符
+        params.push(currentParam.trim());
+        currentParam = '';
+      } else {
+        currentParam += char;
+      }
+    }
+
+    // 添加最后一个参数
+    if (currentParam.trim()) {
+      params.push(currentParam.trim());
+    }
+
+    // 如果有末尾逗号，添加一个空参数
+    if (hasTrailingComma) {
+      params.push('');
+    }
+
+    return params;
+  };
+
   // 改进后的公式验证函数，支持嵌套函数类型检测
   const validateFormula = (formula) => {
     if (isLoading || fields.length === 0) return []; // 如果字段正在加载，不执行验证
@@ -1120,53 +1166,6 @@ const FormulaEditor = ({
       return functionMatches;
     };
 
-    // 解析参数列表的辅助函数，考虑嵌套函数调用
-    const parseParameters = (paramsText) => {
-      if (!paramsText.trim()) return [];
-
-      const params = [];
-      let currentParam = '';
-      let openBrackets = 0;
-      let inQuote = false;
-
-      for (let i = 0; i < paramsText.length; i++) {
-        const char = paramsText[i];
-
-        // 处理引号内的文本（不处理转义情况，简化起见）
-        if (char === '"' && (i === 0 || paramsText[i - 1] !== '\\')) {
-          inQuote = !inQuote;
-          currentParam += char;
-          continue;
-        }
-
-        if (inQuote) {
-          currentParam += char;
-          continue;
-        }
-
-        if (char === '(') {
-          openBrackets++;
-          currentParam += char;
-        } else if (char === ')') {
-          openBrackets--;
-          currentParam += char;
-        } else if (char === ',' && openBrackets === 0) {
-          // 只有在不在嵌套函数内部时，才将逗号视为参数分隔符
-          params.push(currentParam.trim());
-          currentParam = '';
-        } else {
-          currentParam += char;
-        }
-      }
-
-      // 添加最后一个参数
-      if (currentParam.trim()) {
-        params.push(currentParam.trim());
-      }
-
-      return params;
-    };
-
     // 检查整个公式是否是单个变量或常量
     if (!formula.includes('(')) {
       const singleToken = formula.trim();
@@ -1271,6 +1270,17 @@ const FormulaEditor = ({
       // 检查每个参数
       for (let i = 0; i < call.params.length; i++) {
         const param = call.params[i];
+
+        // 检查空参数（末尾逗号）
+        if (param === '') {
+          errors.push({
+            type: 'syntax',
+            message: `函数 ${functionName} 参数列表中有多余的逗号`,
+            function: functionName,
+          });
+          continue;
+        }
+
         const paramType = call.paramTypes[i]; // 从函数调用对象获取的参数类型
 
         // 获取此参数位置的预期类型（支持可变参数）
@@ -1284,9 +1294,9 @@ const FormulaEditor = ({
             if (!isTypeCompatible(paramType, expectedParamType)) {
               errors.push({
                 type: 'returnType',
-                message: `函数 ${functionName} 的第 ${
-                  i + 1
-                } 个参数需要类型 '${expectedParamType}'，但嵌套函数返回类型为 '${paramType}'`,
+                message: `函数 ${functionName} 的第 ${i + 1} 个参数需要类型 '${getChineseTypeName(
+                  expectedParamType,
+                )}'，但嵌套函数返回类型为 '${getChineseTypeName(paramType)}'`,
                 function: functionName,
                 paramIndex: i,
                 expectedType: expectedParamType,
@@ -1314,21 +1324,14 @@ const FormulaEditor = ({
           else if (expectedParamType !== 'any' && !isParameterTypeValid(param, expectedParamType)) {
             // 获取实际类型用于错误消息
             const actualType = getValueType(param);
-            const expectedTypeName =
-              expectedParamType === 'number'
-                ? '数字'
-                : expectedParamType === 'string'
-                ? '文本'
-                : expectedParamType === 'boolean'
-                ? '布尔值'
-                : expectedParamType;
+            const expectedTypeName = getChineseTypeName(expectedParamType);
 
             errors.push({
               type: 'type',
               message: `函数 ${functionName} 的第 ${
                 i + 1
               } 个参数 "${param}" 类型错误，期望 ${expectedTypeName} 类型，实际是 ${
-                actualType || '未知'
+                getChineseTypeName(actualType) || '未知'
               } 类型`,
               function: functionName,
               variable: param,
@@ -1427,18 +1430,7 @@ const FormulaEditor = ({
 
   // 处理字段点击
   const handleFieldClick = (field) => {
-    if (field.type === 'object' && field.fields) {
-      // 对象类型，等待子字段选择
-    } else {
-      insertAtCursor(field.displayName, field.sourceName);
-    }
-  };
-
-  // 处理子字段点击
-  const handleSubfieldClick = (field, subfield) => {
-    const displayText = `${field.displayName}.${subfield.displayName}`;
-    const sourceText = `${field.sourceName}.${subfield.sourceName}`;
-    insertAtCursor(displayText, sourceText);
+    insertAtCursor(field.displayName, field.sourceName);
   };
 
   // 处理公式输入变化
@@ -1483,83 +1475,142 @@ const FormulaEditor = ({
     setHoveredFunction(null);
   };
 
-  // 计算公式结果
+  // 获取筛选后的字段列表 - 移除对象类型字段
+  const getFilteredFields = () => {
+    if (isLoading) return [];
+
+    // 过滤掉对象类型字段
+    const nonObjectFields = fields.filter((field) => field.type !== 'object');
+
+    if (!searchFieldTerm) return nonObjectFields;
+
+    return nonObjectFields.filter((field) => {
+      const nameToSearch = isSourceMode ? field.sourceName : field.displayName;
+      return nameToSearch.toLowerCase().includes(searchFieldTerm.toLowerCase());
+    });
+  };
+
+  // 改进的计算公式结果函数 - 支持嵌套函数
   const calculateFormulaResult = (formula, testData) => {
     try {
-      // 基本运算的简化计算器
-      const functionPattern = /([A-Z][A-Za-z0-9]*)\s*\((.*)\)/;
-      const mainMatch = formula.match(functionPattern);
-
-      if (mainMatch) {
-        const functionName = mainMatch[1];
-        const argsString = mainMatch[2];
-
-        // 检查函数是否存在
-        const functionDef = functionConfig.getFunction(functionName);
-        if (!functionDef) {
-          throw new Error(`未定义的函数: ${functionName}`);
-        }
-
-        // 处理参数
-        const args = argsString.split(',').map((arg) => {
-          const trimmedArg = arg.trim();
-
-          // 数字字面量
-          if (isNumericLiteral(trimmedArg)) {
-            return parseFloat(trimmedArg);
-          }
-
-          // 布尔字面量
-          if (isBooleanLiteral(trimmedArg)) {
-            return trimmedArg.toLowerCase() === 'true';
-          }
-
-          // 变量引用（嵌套或非嵌套）
-          const parts = trimmedArg.split('.');
-
-          if (parts.length === 1) {
-            return testData[trimmedArg];
-          } else {
-            let value = testData;
-            for (const part of parts) {
-              if (value === undefined || value === null) {
-                throw new Error(`找不到测试数据中的变量: ${trimmedArg}`);
-              }
-              value = value[part];
-            }
-            return value;
-          }
-        });
-
-        // 执行函数
-        return functionDef.evaluate(...args);
-      } else {
-        // 非函数调用，可能是变量或常量
-        if (isNumericLiteral(formula)) {
-          return parseFloat(formula);
-        } else if (isBooleanLiteral(formula)) {
-          return formula.toLowerCase() === 'true';
-        } else {
-          // 变量引用
-          const parts = formula.trim().split('.');
-
-          if (parts.length === 1) {
-            return testData[formula.trim()];
-          } else {
-            let value = testData;
-            for (const part of parts) {
-              if (value === undefined) {
-                throw new Error(`找不到测试数据中的变量: ${formula}`);
-              }
-              value = value[part];
-            }
-            return value;
-          }
-        }
-      }
+      return evaluateExpression(formula, testData);
     } catch (error) {
       throw error;
     }
+  };
+
+  // 辅助函数：递归评估表达式
+  const evaluateExpression = (expression, testData) => {
+    const functionPattern = /([A-Z][A-Za-z0-9]*)\s*\((.*)\)/;
+    const mainMatch = expression.match(functionPattern);
+
+    if (mainMatch) {
+      const functionName = mainMatch[1];
+      const argsString = mainMatch[2];
+
+      // 检查函数是否存在
+      const functionDef = functionConfig.getFunction(functionName);
+      if (!functionDef) {
+        throw new Error(`未定义的函数: ${functionName}`);
+      }
+
+      // 解析参数，处理嵌套函数
+      const args = parseAndEvaluateArgs(argsString, testData);
+
+      // 执行函数
+      return functionDef.evaluate(...args);
+    } else {
+      // 非函数调用，可能是变量或常量
+      if (isNumericLiteral(expression)) {
+        return parseFloat(expression);
+      } else if (isBooleanLiteral(expression)) {
+        return expression.toLowerCase() === 'true';
+      } else {
+        // 变量引用
+        return resolveVariable(expression.trim(), testData);
+      }
+    }
+  };
+
+  // 解析并评估函数参数，处理嵌套调用
+  const parseAndEvaluateArgs = (argsString, testData) => {
+    const args = [];
+    let currentArg = '';
+    let nestedLevel = 0;
+    let inQuote = false;
+
+    for (let i = 0; i < argsString.length; i++) {
+      const char = argsString[i];
+
+      // 处理引号内的文本
+      if (char === '"' && (i === 0 || argsString[i - 1] !== '\\')) {
+        inQuote = !inQuote;
+        currentArg += char;
+        continue;
+      }
+
+      if (inQuote) {
+        currentArg += char;
+        continue;
+      }
+
+      // 处理嵌套括号
+      if (char === '(') {
+        nestedLevel++;
+        currentArg += char;
+      } else if (char === ')') {
+        nestedLevel--;
+        currentArg += char;
+      }
+      // 只处理顶层的逗号
+      else if (char === ',' && nestedLevel === 0) {
+        args.push(evaluateArg(currentArg.trim(), testData));
+        currentArg = '';
+      } else {
+        currentArg += char;
+      }
+    }
+
+    // 添加最后一个参数
+    if (currentArg.trim()) {
+      args.push(evaluateArg(currentArg.trim(), testData));
+    }
+
+    return args;
+  };
+
+  // 评估单个参数（可能是嵌套函数、字面量或变量）
+  const evaluateArg = (arg, testData) => {
+    // 检查是否是嵌套函数调用
+    if (arg.match(/[A-Z][A-Za-z0-9]*\s*\(/)) {
+      return evaluateExpression(arg, testData); // 递归调用
+    }
+
+    // 检查是否是字面量
+    if (isNumericLiteral(arg)) {
+      return parseFloat(arg);
+    }
+    if (isBooleanLiteral(arg)) {
+      return arg.toLowerCase() === 'true';
+    }
+
+    // 必须是变量引用
+    return resolveVariable(arg, testData);
+  };
+
+  // 从测试数据中解析变量引用
+  const resolveVariable = (variable, testData) => {
+    const parts = variable.split('.');
+    let value = testData;
+
+    for (const part of parts) {
+      if (value === undefined || value === null) {
+        throw new Error(`找不到测试数据中的变量: ${variable}`);
+      }
+      value = value[part];
+    }
+
+    return value;
   };
 
   const handleTestDataChange = (e) => {
@@ -1581,50 +1632,17 @@ const FormulaEditor = ({
       if (formula.includes(field.sourceName)) {
         fieldReferences.push(field);
       }
-
-      // 检查对象字段引用
-      if (field.type === 'object' && field.fields) {
-        field.fields.forEach((subfield) => {
-          const fullPath = `${field.sourceName}.${subfield.sourceName}`;
-          if (formula.includes(fullPath)) {
-            fieldReferences.push({
-              parentField: field,
-              field: subfield,
-              fullPath,
-            });
-          }
-        });
-      }
     });
 
     // 创建样本数据
     fieldReferences.forEach((ref) => {
-      if (ref.parentField) {
-        // 子字段
-        if (!testData[ref.parentField.sourceName]) {
-          testData[ref.parentField.sourceName] = {};
-        }
-
-        // 根据类型生成值
-        if (ref.field.type === '数字') {
-          testData[ref.parentField.sourceName][ref.field.sourceName] = 100;
-        } else if (ref.field.type === '文本') {
-          testData[ref.parentField.sourceName][ref.field.sourceName] = '示例文本';
-        } else {
-          testData[ref.parentField.sourceName][ref.field.sourceName] = true;
-        }
+      // 根据类型生成值
+      if (ref.type === '数字') {
+        testData[ref.sourceName] = 100;
+      } else if (ref.type === '文本') {
+        testData[ref.sourceName] = '示例文本';
       } else {
-        // 顶层字段
-        // 根据类型生成值
-        if (ref.type === '数字') {
-          testData[ref.sourceName] = 100;
-        } else if (ref.type === '文本') {
-          testData[ref.sourceName] = '示例文本';
-        } else if (ref.type === 'object') {
-          testData[ref.sourceName] = {}; // 创建空对象
-        } else {
-          testData[ref.sourceName] = true;
-        }
+        testData[ref.sourceName] = true;
       }
     });
 
@@ -1662,17 +1680,6 @@ const FormulaEditor = ({
     setTestModalVisible(false);
   };
 
-  const getFilteredFields = () => {
-    if (isLoading) return [];
-
-    if (!searchFieldTerm) return fields;
-
-    return fields.filter((field) => {
-      const nameToSearch = isSourceMode ? field.sourceName : field.displayName;
-      return nameToSearch.toLowerCase().includes(searchFieldTerm.toLowerCase());
-    });
-  };
-
   const getFilteredFunctions = () => {
     const allFunctions = functionConfig.getAllFunctions();
 
@@ -1695,31 +1702,11 @@ const FormulaEditor = ({
       fields.forEach((field) => {
         const escapedName = field.sourceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         fieldPatterns.push(escapedName);
-
-        if (field.type === 'object' && field.fields) {
-          field.fields.forEach((subfield) => {
-            const pattern = `${escapedName}\\.${subfield.sourceName.replace(
-              /[.*+?^${}()|[\]\\]/g,
-              '\\$&',
-            )}`;
-            fieldPatterns.push(pattern);
-          });
-        }
       });
     } else {
       fields.forEach((field) => {
         const escapedName = field.displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         fieldPatterns.push(escapedName);
-
-        if (field.type === 'object' && field.fields) {
-          field.fields.forEach((subfield) => {
-            const pattern = `${escapedName}\\.${subfield.displayName.replace(
-              /[.*+?^${}()|[\]\\]/g,
-              '\\$&',
-            )}`;
-            fieldPatterns.push(pattern);
-          });
-        }
       });
     }
 
@@ -1878,60 +1865,27 @@ const FormulaEditor = ({
                     size="small"
                     className="border border-gray-200 hover:shadow-md transition-all cursor-pointer"
                     styles={{ body: { padding: '8px 12px' } }}
+                    onClick={() => handleFieldClick(field)}
                   >
-                    <div onClick={() => handleFieldClick(field)}>
-                      <div className="flex justify-between items-center">
-                        <div className="flex flex-col">
+                    <div className="flex justify-between items-center">
+                      <div className="flex flex-col">
+                        <Text
+                          strong
+                          className="text-gray-800"
+                        >
+                          {isSourceMode ? field.sourceName : field.displayName}
+                        </Text>
+                        {!isSourceMode && (
                           <Text
-                            strong
-                            className="text-gray-800"
+                            type="secondary"
+                            className="text-xs mt-0.5"
                           >
-                            {isSourceMode ? field.sourceName : field.displayName}
+                            {field.sourceName}
                           </Text>
-                          {!isSourceMode && (
-                            <Text
-                              type="secondary"
-                              className="text-xs mt-0.5"
-                            >
-                              {field.sourceName}
-                            </Text>
-                          )}
-                        </div>
-                        <TypeBadge type={field.type} />
+                        )}
                       </div>
+                      <TypeBadge type={field.type} />
                     </div>
-
-                    {field.type === 'object' && field.fields && (
-                      <div className="mt-1.5 pt-1.5 border-t border-gray-200 bg-gray-50 rounded-md px-2 py-0.5">
-                        <div className="space-y-1">
-                          {field.fields.map((subfield, subIndex) => (
-                            <div
-                              key={subIndex}
-                              className="py-1 px-1.5 rounded-md hover:bg-white cursor-pointer flex justify-between items-center transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation(); // 防止冒泡触发父级的点击事件
-                                handleSubfieldClick(field, subfield);
-                              }}
-                            >
-                              <div className="flex flex-col">
-                                <Text className="text-gray-800 text-sm">
-                                  {isSourceMode ? subfield.sourceName : subfield.displayName}
-                                </Text>
-                                {!isSourceMode && (
-                                  <Text
-                                    type="secondary"
-                                    className="text-xs mt-0.5"
-                                  >
-                                    {subfield.sourceName}
-                                  </Text>
-                                )}
-                              </div>
-                              <TypeBadge type={subfield.type} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </Card>
                 ))
               ) : (
@@ -2103,14 +2057,9 @@ const FormulaEditor = ({
                           : []),
                         {
                           label: '参数类型',
-                          value:
-                            (hoveredFunction || selectedFunction).paramTypes[0] === 'number'
-                              ? '数字'
-                              : (hoveredFunction || selectedFunction).paramTypes[0] === 'string'
-                              ? '文本'
-                              : (hoveredFunction || selectedFunction).paramTypes[0] === 'boolean'
-                              ? '布尔值'
-                              : '任意',
+                          value: getChineseTypeName(
+                            (hoveredFunction || selectedFunction).paramTypes[0],
+                          ),
                         },
                       ]}
                       renderItem={(item) => (

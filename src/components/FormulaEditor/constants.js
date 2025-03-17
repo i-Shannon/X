@@ -3,6 +3,32 @@
 // 面板高度
 export const PANEL_HEIGHT = 500; // 三栏布局高度（像素）
 
+// 类型显示映射 - 技术类型到显示名称的映射
+export const TYPE_DISPLAY_MAP = {
+  'number': '数字',
+  'string': '文本',
+  'boolean': '布尔值',
+  'date': '时间',
+  'object': '对象',
+  'any': '任意类型'
+};
+
+// 类型映射关系 - 将显示类型映射到技术类型
+export const TYPE_MAP = {
+  '数字': 'number',
+  '文本': 'string',
+  '时间': 'date',
+  'object': 'object',
+  'boolean': 'boolean'
+};
+
+// 字段类型配置 - 用于视觉展示
+export const FIELD_TYPE_CONFIG = {
+  '数字': { color: 'blue', label: '数字' },
+  '文本': { color: 'green', label: '文本' },
+  '时间': { color: 'purple', label: '时间' },
+};
+
 // 默认函数类别和定义
 export const DEFAULT_FUNCTION_CATEGORIES = [
   {
@@ -90,6 +116,72 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         returnType: 'boolean',
         evaluate: (...args) => args.some(Boolean),
       },
+      {
+        name: 'GT',
+        description: '大于比较，如果第一个数大于第二个数则返回真',
+        syntax: 'GT(num1, num2)',
+        example: 'GT(5, 3) = true',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['number'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a > b,
+      },
+      {
+        name: 'LT',
+        description: '小于比较，如果第一个数小于第二个数则返回真',
+        syntax: 'LT(num1, num2)',
+        example: 'LT(5, 3) = false',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['number'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a < b,
+      },
+      {
+        name: 'EQ',
+        description: '等于比较，如果两个值相等则返回真',
+        syntax: 'EQ(value1, value2)',
+        example: 'EQ(5, 5) = true',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['any'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a === b,
+      },
+      {
+        name: 'NEQ',
+        description: '不等于比较，如果两个值不相等则返回真',
+        syntax: 'NEQ(value1, value2)',
+        example: 'NEQ(5, 3) = true',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['any'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a !== b,
+      },
+      {
+        name: 'GTE',
+        description: '大于等于比较，如果第一个数大于或等于第二个数则返回真',
+        syntax: 'GTE(num1, num2)',
+        example: 'GTE(5, 5) = true',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['number'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a >= b,
+      },
+      {
+        name: 'LTE',
+        description: '小于等于比较，如果第一个数小于或等于第二个数则返回真',
+        syntax: 'LTE(num1, num2)',
+        example: 'LTE(3, 5) = true',
+        minParams: 2,
+        maxParams: 2,
+        paramTypes: ['number'],
+        returnType: 'boolean',
+        evaluate: (a, b) => a <= b,
+      },
     ],
   },
   {
@@ -110,23 +202,6 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
   },
 ];
 
-// 字段类型映射
-export const FIELD_TYPE_CONFIG = {
-  '数字': { color: 'blue', label: '数字' },
-  '文本': { color: 'green', label: '文本' },
-  '时间': { color: 'purple', label: '时间' },
-  'object': { color: 'default', label: '对象' },
-};
-
-// 类型映射关系 - 将显示类型映射到技术类型
-export const TYPE_MAP = {
-  '数字': 'number',
-  '文本': 'string',
-  '时间': 'date',
-  'object': 'object',
-  'boolean': 'boolean'
-};
-
 // 默认的初始公式
 export const DEFAULT_FORMULA = {
   display: 'ADD(1, 1)',
@@ -134,4 +209,4 @@ export const DEFAULT_FORMULA = {
 };
 
 // 默认的测试数据
-export const DEFAULT_TEST_DATA = '{ "person": { "id": 123, "count": 5 }, "price": 25, "version": 2 }';
+export const DEFAULT_TEST_DATA = '{ "price": 25, "version": 2 }';

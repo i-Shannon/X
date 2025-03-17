@@ -28,16 +28,7 @@ const App = () => {
         { displayName: '售价', sourceName: 'price', type: '数字' },
         { displayName: '版本号', sourceName: 'version', type: '数字' },
         { displayName: '创建时间', sourceName: 'createDate', type: '时间' },
-        // {
-        //   displayName: '人员对象',
-        //   sourceName: 'person',
-        //   type: 'object',
-        //   fields: [
-        //     { displayName: 'ID', sourceName: 'id', type: '数字' },
-        //     { displayName: '姓名', sourceName: 'name', type: '文本' },
-        //     { displayName: '数量', sourceName: 'count', type: '数字' },
-        //   ],
-        // },
+        // 移除了对象类型字段的支持
       ];
 
       setFields(mockFieldData);

@@ -933,21 +933,22 @@ const FormulaEditor = ({
 
     // 如果有括号错误，先返回这些错误
     if (errors.length > 0) {
+      setValidationErrors(errors);
       return errors;
     }
 
     // 解析函数调用和参数的辅助函数
-    const parseFunctionCalls = (text) => {
+    const parseFunctionCalls = (text, startOffset = 0) => {
       const functionMatches = [];
       let pos = 0;
 
       while (pos < text.length) {
         // 查找函数名称
-        const functionMatch = text.substring(pos).match(/[A-Z][A-Za-z0-9]*\s*\(/);
+        const functionMatch = text.substring(pos).match(/([A-Z][A-Za-z0-9]*)\s*\(/);
         if (!functionMatch) break;
 
         // 找到了潜在的函数调用
-        const functionName = functionMatch[0].trim().slice(0, -1);
+        const functionName = functionMatch[1];
         const functionStart = pos + functionMatch.index;
         const paramsStart = functionStart + functionMatch[0].length;
 
@@ -966,12 +967,35 @@ const FormulaEditor = ({
           const paramsText = text.substring(paramsStart, paramsEnd - 1);
           const params = parseParameters(paramsText);
 
+          // 绝对位置信息
+          const absoluteStart = functionStart + startOffset;
+          const absoluteEnd = paramsEnd + startOffset;
+
           functionMatches.push({
             name: functionName,
-            start: functionStart,
-            end: paramsEnd,
+            start: absoluteStart,
+            end: absoluteEnd,
             params: params,
+            isNestedCall: startOffset > 0, // 根据偏移量判断是否为嵌套调用
+            fullText: text.substring(functionStart, paramsEnd),
           });
+
+          // 递归解析每个参数中可能存在的嵌套函数
+          for (let i = 0; i < params.length; i++) {
+            const param = params[i];
+            if (param.match(/[A-Z][A-Za-z0-9]*\s*\(/)) {
+              // 计算参数在原始文本中的位置
+              let paramOffset = 0;
+              for (let j = 0; j < i; j++) {
+                paramOffset += params[j].length + 1; // +1 为逗号
+              }
+
+              // 嵌套函数的起始偏移量
+              const nestedOffset = absoluteStart + functionName.length + 1 + paramOffset;
+              const nestedFunctions = parseFunctionCalls(param, nestedOffset);
+              functionMatches.push(...nestedFunctions);
+            }
+          }
         }
 
         // 继续从函数结束位置搜索
@@ -983,12 +1007,27 @@ const FormulaEditor = ({
 
     // 解析参数列表的辅助函数，考虑嵌套函数
     const parseParameters = (paramsText) => {
+      if (!paramsText.trim()) return [];
+
       const params = [];
       let currentParam = '';
       let openBrackets = 0;
+      let inQuote = false;
 
       for (let i = 0; i < paramsText.length; i++) {
         const char = paramsText[i];
+
+        // 处理引号内的文本（不处理转义情况，简化起见）
+        if (char === '"' && (i === 0 || paramsText[i - 1] !== '\\')) {
+          inQuote = !inQuote;
+          currentParam += char;
+          continue;
+        }
+
+        if (inQuote) {
+          currentParam += char;
+          continue;
+        }
 
         if (char === '(') {
           openBrackets++;
@@ -1013,48 +1052,77 @@ const FormulaEditor = ({
       return params;
     };
 
-    // 检查函数用法
+    // 检查整个公式是否是单个变量或常量
+    if (!formula.includes('(')) {
+      const singleToken = formula.trim();
+      if (
+        singleToken &&
+        !isVariableValid(singleToken) &&
+        !isNumericLiteral(singleToken) &&
+        !isBooleanLiteral(singleToken)
+      ) {
+        errors.push({
+          type: 'variable',
+          message: `"${singleToken}" 不是有效的变量或常量`,
+          variable: singleToken,
+        });
+      }
+
+      setValidationErrors(errors);
+      return errors;
+    }
+
+    // 解析所有函数调用
     const functionCalls = parseFunctionCalls(formula);
 
-    // 检查整体公式结构
-    if (functionCalls.length > 0) {
-      // 找到最后一个函数调用结束的位置
-      const lastFunctionCall = functionCalls.reduce(
-        (last, current) => (current.end > last.end ? current : last),
-        functionCalls[0],
-      );
+    // 如果没有找到函数调用但不是单变量
+    if (
+      functionCalls.length === 0 &&
+      formula.trim() &&
+      !isVariableValid(formula.trim()) &&
+      !isNumericLiteral(formula.trim())
+    ) {
+      errors.push({
+        type: 'syntax',
+        message: `公式格式不正确: "${formula.trim()}"`,
+      });
 
-      // 检查最后一个函数调用后是否有非空白字符
-      const trailingContent = formula.substring(lastFunctionCall.end).trim();
-      if (trailingContent.length > 0) {
+      setValidationErrors(errors);
+      return errors;
+    }
+
+    // 找到真正的顶层函数调用
+    const rootCalls = functionCalls.filter((call) => !call.isNestedCall);
+
+    // 检查公式结构 - 检查是否由单个函数组成或者直接是变量/常量
+    if (rootCalls.length > 1) {
+      errors.push({
+        type: 'syntax',
+        message: `公式中存在${rootCalls.length}个独立的函数调用，应该只有一个顶层函数调用`,
+      });
+    } else if (rootCalls.length === 1) {
+      // 检查函数调用前后是否有无效内容
+      const leadingContent = formula.substring(0, rootCalls[0].start).trim();
+      const trailingContent = formula.substring(rootCalls[0].end).trim();
+
+      if (leadingContent) {
+        errors.push({
+          type: 'syntax',
+          message: `函数调用前存在无效内容: "${leadingContent}"`,
+          position: 0,
+        });
+      }
+
+      if (trailingContent) {
         errors.push({
           type: 'syntax',
           message: `函数调用后存在无效内容: "${trailingContent}"`,
-          position: lastFunctionCall.end,
-        });
-      }
-    } else {
-      // 如果没有函数调用，检查是否是有效的单个变量或常量
-      const singleTokenMatch = formula.trim().match(/^([A-Za-z0-9_.]+)$/);
-      if (singleTokenMatch) {
-        const token = singleTokenMatch[1];
-        if (!isVariableValid(token) && !isNumericLiteral(token) && !isBooleanLiteral(token)) {
-          errors.push({
-            type: 'variable',
-            message: `"${token}" 不是有效的变量或常量`,
-            variable: token,
-          });
-        }
-      } else if (formula.trim() && !isNumericLiteral(formula.trim())) {
-        // 不是函数调用、单变量或数字字面量，可能是语法错误
-        errors.push({
-          type: 'syntax',
-          message: `公式格式不正确: "${formula.trim()}"`,
+          position: rootCalls[0].end,
         });
       }
     }
 
-    // 验证每个函数调用
+    // 验证每个函数调用（包括嵌套的）
     for (const call of functionCalls) {
       const functionName = call.name;
       const functionDef = functionConfig.getFunction(functionName);
@@ -1085,32 +1153,40 @@ const FormulaEditor = ({
         });
       }
 
-      // 检查参数
-      for (const param of call.params) {
-        // 检查参数是否是嵌套函数调用
+      // 检查每个参数
+      for (let i = 0; i < call.params.length; i++) {
+        const param = call.params[i];
+
+        // 跳过嵌套函数调用参数的验证，因为它们已经被单独处理
         if (param.match(/^[A-Z][A-Za-z0-9]*\s*\(/)) {
-          // 递归验证嵌套函数
-          continue; // 嵌套函数会被单独验证
+          continue;
         }
 
-        // 检查变量引用
-        if (!isVariableValid(param)) {
+        // 对于非嵌套函数参数，验证变量或常量
+        if (
+          !isNumericLiteral(param) &&
+          !isBooleanLiteral(param) &&
+          !param.startsWith('"') &&
+          !isVariableValid(param)
+        ) {
           errors.push({
             type: 'variable',
             message: `参数 "${param}" 不是有效的变量或常量`,
             variable: param,
           });
         } else if (
+          functionDef.paramTypes.length > 0 &&
           functionDef.paramTypes[0] !== 'any' &&
-          !isParameterTypeValid(param, functionDef.paramTypes[0])
+          !isParameterTypeValid(
+            param,
+            functionDef.paramTypes[Math.min(i, functionDef.paramTypes.length - 1)],
+          )
         ) {
+          // 参数类型检查，支持可变参数函数
+          const paramType = functionDef.paramTypes[Math.min(i, functionDef.paramTypes.length - 1)];
           const fieldType = fieldTypeMap[param.trim()];
           const expectedTypeName =
-            functionDef.paramTypes[0] === 'number'
-              ? '数字'
-              : functionDef.paramTypes[0] === 'string'
-              ? '文本'
-              : '布尔值';
+            paramType === 'number' ? '数字' : paramType === 'string' ? '文本' : '布尔值';
 
           errors.push({
             type: 'type',

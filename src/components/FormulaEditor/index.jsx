@@ -52,25 +52,6 @@ const { TextArea } = Input;
 const createFunctionConfig = (initialCategories = []) => {
   let functionCategories = [...initialCategories];
 
-  // 添加新函数类别的方法
-  const addCategory = (category) => {
-    functionCategories.push(category);
-  };
-
-  // 向已有类别添加函数的方法
-  const addFunction = (categoryName, functionDef) => {
-    const category = functionCategories.find((cat) => cat.name === categoryName);
-    if (category) {
-      category.functions.push(functionDef);
-    } else {
-      // 如果类别不存在则创建新类别
-      addCategory({
-        name: categoryName,
-        functions: [functionDef],
-      });
-    }
-  };
-
   // 获取所有函数类别的方法
   const getCategories = () => {
     return functionCategories;
@@ -87,8 +68,6 @@ const createFunctionConfig = (initialCategories = []) => {
   };
 
   return {
-    addCategory,
-    addFunction,
     getCategories,
     getAllFunctions,
     getFunction,
@@ -444,8 +423,8 @@ const HighlightedFormulaInput = React.forwardRef(
 
               // 如果刚输入了中文逗号并被转换为英文逗号，保持光标在逗号之后
               if (needAdjustForComma && commaPos) {
-                // 光标应该保持在逗号的位置(已转换为英文逗号)
-                targetPosition = commaPos;
+                // 光标应该保持在逗号的位置
+                targetPosition = commaPos + 1;
               } else {
                 // 否则使用保存的位置
                 targetPosition = currentPosition.start;
@@ -480,8 +459,8 @@ const HighlightedFormulaInput = React.forwardRef(
 
     return (
       <div
-        className={`relative border rounded-md shadow-sm min-h-[38px] ${
-          hasFocus ? 'border-blue-300 ring-1 ring-blue-500' : 'border-gray-300'
+        className={`relative border-2 rounded-md shadow-sm min-h-[38px] ${
+          hasFocus ? 'border-blue-400 ring-1 ring-blue-500' : 'border-gray-400'
         }`}
       >
         <div
@@ -767,36 +746,27 @@ const FormulaEditor = ({
   // 字段配置相关的函数
   const getDisplayToSourceMap = () => {
     const map = {};
-
-    // 不再支持对象类型字段
     fields.forEach((field) => {
       map[field.displayName] = field.sourceName;
     });
-
     return map;
   };
 
   const getSourceToDisplayMap = () => {
     const map = {};
-
-    // 不再支持对象类型字段
     fields.forEach((field) => {
       map[field.sourceName] = field.displayName;
     });
-
     return map;
   };
 
   const getFieldTypeMap = () => {
     const map = {};
-
-    // 不再支持对象类型字段
     fields.forEach((field) => {
       // 添加显示名和源名映射
       map[field.displayName] = field.type;
       map[field.sourceName] = field.type;
     });
-
     return map;
   };
 

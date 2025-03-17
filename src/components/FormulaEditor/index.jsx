@@ -1,9 +1,8 @@
-// 修改后支持与 Ant Design Form 集成的公式编辑器组件
+// 公式编辑器组件
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Input,
   Button,
-  Switch,
   Card,
   Modal,
   Typography,
@@ -110,13 +109,15 @@ const TypeBadge = ({ type }) => {
   );
 };
 
-// 改进的高亮公式输入组件 - 直接在输入框内实现高亮且修复光标问题
+// 改进的高亮公式输入组件 - 使用现代DOM API
 const HighlightedFormulaInput = React.forwardRef(
-  ({ value, onChange, onSelect, highlightPattern, functionNames, isSourceMode }, ref) => {
+  ({ value, onChange, onSelect, highlightPattern, functionNames }, ref) => {
     const inputRef = useRef(null);
     const [hasFocus, setHasFocus] = useState(false);
     const [lastCursorPosition, setLastCursorPosition] = useState(null);
+    const [justTypedComma, setJustTypedComma] = useState(false);
     const lastValueRef = useRef('');
+    const commaPositionRef = useRef(null);
 
     // 获取当前光标位置和选择范围
     const getCaretPosition = () => {
@@ -168,7 +169,7 @@ const HighlightedFormulaInput = React.forwardRef(
       };
     };
 
-    // 设置光标位置
+    // 设置光标位置 - 使用现代Selection API
     const setCaretPosition = (start, end = start) => {
       if (!inputRef.current) return;
 
@@ -177,59 +178,80 @@ const HighlightedFormulaInput = React.forwardRef(
         inputRef.current.focus();
       }
 
-      const selection = window.getSelection();
-      const range = document.createRange();
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
 
-      // 找到对应的文本节点和偏移量
-      let currentPosition = 0;
-      let startNode = null;
-      let startOffset = 0;
-      let endNode = null;
-      let endOffset = 0;
+        // 找到对应的文本节点和偏移量
+        let currentPosition = 0;
+        let startNode = null;
+        let startOffset = 0;
+        let endNode = null;
+        let endOffset = 0;
 
-      // 递归查找正确的节点和偏移量
-      const findPosition = (node) => {
-        // 对于文本节点，检查位置是否在范围内
-        if (node.nodeType === Node.TEXT_NODE) {
-          const nodeLength = node.length;
+        // 递归查找正确的节点和偏移量
+        const findPosition = (node) => {
+          // 对于文本节点，检查位置是否在范围内
+          if (node.nodeType === Node.TEXT_NODE) {
+            const nodeLength = node.length;
 
-          // 找起始位置
-          if (!startNode && currentPosition + nodeLength >= start) {
-            startNode = node;
-            startOffset = start - currentPosition;
-          }
+            // 找起始位置
+            if (!startNode && currentPosition + nodeLength >= start) {
+              startNode = node;
+              startOffset = start - currentPosition;
+            }
 
-          // 找结束位置
-          if (!endNode && currentPosition + nodeLength >= end) {
-            endNode = node;
-            endOffset = end - currentPosition;
-            return true;
-          }
-
-          currentPosition += nodeLength;
-        }
-        // 对于元素节点，递归遍历子节点
-        else if (node.nodeType === Node.ELEMENT_NODE) {
-          for (let i = 0; i < node.childNodes.length; i++) {
-            // 如果找到结束位置，停止遍历
-            if (findPosition(node.childNodes[i])) {
+            // 找结束位置
+            if (!endNode && currentPosition + nodeLength >= end) {
+              endNode = node;
+              endOffset = end - currentPosition;
               return true;
             }
+
+            currentPosition += nodeLength;
+          }
+          // 对于元素节点，递归遍历子节点
+          else if (node.nodeType === Node.ELEMENT_NODE) {
+            for (let i = 0; i < node.childNodes.length; i++) {
+              // 如果找到结束位置，停止遍历
+              if (findPosition(node.childNodes[i])) {
+                return true;
+              }
+            }
+          }
+
+          return false;
+        };
+
+        // 从编辑器容器开始遍历
+        findPosition(inputRef.current);
+
+        // 如果找到合适的节点，设置光标
+        if (startNode && endNode) {
+          range.setStart(startNode, startOffset);
+          range.setEnd(endNode, endOffset);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } else if (inputRef.current.childNodes.length > 0) {
+          // 备用方案：如果无法找到精确的节点，尝试将光标放在最后
+          const lastChild = inputRef.current.lastChild;
+          if (lastChild.nodeType === Node.TEXT_NODE) {
+            range.setStart(lastChild, lastChild.length);
+            range.setEnd(lastChild, lastChild.length);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          } else {
+            // 如果最后一个子元素不是文本节点，创建一个新的文本节点
+            const textNode = document.createTextNode('');
+            inputRef.current.appendChild(textNode);
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 0);
+            selection.removeAllRanges();
+            selection.addRange(range);
           }
         }
-
-        return false;
-      };
-
-      // 从编辑器容器开始遍历
-      findPosition(inputRef.current);
-
-      // 如果找到合适的节点，设置光标
-      if (startNode && endNode) {
-        range.setStart(startNode, startOffset);
-        range.setEnd(endNode, endOffset);
-        selection.removeAllRanges();
-        selection.addRange(range);
+      } catch (error) {
+        console.error('设置光标位置时出错:', error);
       }
     };
 
@@ -299,29 +321,77 @@ const HighlightedFormulaInput = React.forwardRef(
       setLastCursorPosition(getCaretPosition());
     };
 
-    // 处理输入事件
+    // 处理输入事件 - 改进以检测中文逗号
     const handleInput = (e) => {
-      // 保存当前光标位置
-      const currentPosition = getCaretPosition();
-      setLastCursorPosition(currentPosition);
-
-      // 提取纯文本并发送给父组件
+      // 获取当前输入内容和光标位置
       const plainText = inputRef.current.innerText;
+      const currentPosition = getCaretPosition();
+
+      // 检查是否刚输入了中文逗号
+      const wasChineseComma =
+        currentPosition.start > 0 && plainText[currentPosition.start - 1] === '，';
+
+      if (wasChineseComma) {
+        // 记录逗号的位置，用于替换后定位光标
+        commaPositionRef.current = currentPosition.start;
+        setJustTypedComma(true);
+      }
+
+      // 保存当前光标位置
+      setLastCursorPosition(currentPosition);
       lastValueRef.current = plainText; // 保存当前值用于比较
 
-      onChange({ target: { value: plainText } });
+      // 向父组件传递额外信息
+      onChange({
+        target: {
+          value: plainText,
+          cursorPosition: currentPosition,
+          justTypedComma: wasChineseComma,
+          commaPosition: wasChineseComma ? currentPosition.start : null,
+        },
+      });
     };
 
-    // 处理粘贴事件
+    // 使用现代DOM API实现文本插入
+    const insertTextAtSelection = (text) => {
+      if (!inputRef.current) return;
+
+      // 获取当前选择
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      // 获取选择的范围
+      const range = selection.getRangeAt(0);
+
+      // 删除当前选择的内容（如果有）
+      range.deleteContents();
+
+      // 创建新的文本节点
+      const textNode = document.createTextNode(text);
+
+      // 插入文本
+      range.insertNode(textNode);
+
+      // 移动光标到插入的文本之后
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // 触发input事件以便更新内容
+      const inputEvent = new Event('input', { bubbles: true });
+      inputRef.current.dispatchEvent(inputEvent);
+    };
+
+    // 处理粘贴事件 - 使用现代DOM API
     const handlePaste = (e) => {
       e.preventDefault();
-      // 获取粘贴的文本并作为纯文本插入
-      const text = e.clipboardData.getData('text/plain');
-      document.execCommand('insertText', false, text);
 
-      // 提取更新后的内容并通知父组件
-      const updatedText = inputRef.current.innerText;
-      onChange({ target: { value: updatedText } });
+      // 获取粘贴的文本
+      const text = e.clipboardData.getData('text/plain');
+
+      // 使用现代API插入文本
+      insertTextAtSelection(text);
     };
 
     const handleFocus = () => {
@@ -348,7 +418,7 @@ const HighlightedFormulaInput = React.forwardRef(
       }
     };
 
-    // 当value变化时更新高亮内容
+    // 当value变化时更新高亮内容 - 改进光标处理
     useEffect(() => {
       if (!inputRef.current) return;
 
@@ -357,35 +427,50 @@ const HighlightedFormulaInput = React.forwardRef(
 
       // 只有当纯文本内容与value不匹配时更新
       if (currentText !== value) {
-        // 保存光标位置
+        // 保存光标位置和特殊标志
         const currentPosition = lastCursorPosition || { start: value.length, end: value.length };
+        const needAdjustForComma = justTypedComma;
+        const commaPos = commaPositionRef.current;
 
         // 更新高亮内容
         inputRef.current.innerHTML = getHighlightedHTML(value);
 
-        // 恢复光标位置
+        // 恢复光标位置，特殊处理逗号情况
         if (document.activeElement === inputRef.current) {
           try {
-            // 考虑到文本长度变化，调整光标位置
-            const maxPos = getPlainText(inputRef.current.innerHTML).length;
-            const adjustedStart = Math.min(currentPosition.start, maxPos);
-            const adjustedEnd = Math.min(currentPosition.end, maxPos);
-
-            // 设置光标位置
             setTimeout(() => {
-              setCaretPosition(adjustedStart, adjustedEnd);
-            }, 0);
+              // 确定正确的光标位置
+              let targetPosition;
+
+              // 如果刚输入了中文逗号并被转换为英文逗号，保持光标在逗号之后
+              if (needAdjustForComma && commaPos) {
+                // 光标应该保持在逗号的位置(已转换为英文逗号)
+                targetPosition = commaPos;
+              } else {
+                // 否则使用保存的位置
+                targetPosition = currentPosition.start;
+              }
+
+              // 设置光标位置
+              setCaretPosition(targetPosition, targetPosition);
+
+              // 重置中文逗号标志和位置
+              setJustTypedComma(false);
+              commaPositionRef.current = null;
+            }, 10);
           } catch (e) {
             console.error('恢复光标位置时出错', e);
           }
         }
       }
-    }, [value, functionNames, highlightPattern]);
+    }, [value, functionNames, highlightPattern, justTypedComma]);
 
     // 暴露方法给父组件
     React.useImperativeHandle(ref, () => ({
       // 设置光标位置方法，供父组件调用
       setCaretPosition,
+      // 插入文本方法，供父组件调用
+      insertText: insertTextAtSelection,
       focus: () => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -495,7 +580,7 @@ const ErrorPopoverContent = ({ errors }) => {
   );
 };
 
-// 改进后的测试模态窗口组件 - 自动执行测试
+// 测试模态窗口组件
 const TestModal = ({
   visible,
   onCancel,
@@ -630,7 +715,7 @@ const FieldsLoadingState = () => (
 );
 
 /**
- * 公式编辑器组件 - 修改为支持Form组件集成
+ * 现代版公式编辑器组件 - 用户只看到显示格式，但内部维护源码格式
  * @param {Object} props 组件属性
  * @param {Array} props.fields 表单字段数组
  * @param {boolean} props.isLoading 是否正在加载字段数据
@@ -659,7 +744,6 @@ const FormulaEditor = ({
   const [searchFuncTerm, setSearchFuncTerm] = useState('');
   const [selectedFunction, setSelectedFunction] = useState(null);
   const [hoveredFunction, setHoveredFunction] = useState(null);
-  const [isSourceMode, setIsSourceMode] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [testDataInput, setTestDataInput] = useState(DEFAULT_TEST_DATA);
   const [testResult, setTestResult] = useState(null);
@@ -676,7 +760,7 @@ const FormulaEditor = ({
     if (value && (value.display !== displayFormula || value.source !== sourceFormula)) {
       setDisplayFormula(value.display || DEFAULT_FORMULA.display);
       setSourceFormula(value.source || DEFAULT_FORMULA.source);
-      validateFormula(isSourceMode ? value.source : value.display);
+      validateFormula(value.display);
     }
   }, [value]);
 
@@ -747,7 +831,7 @@ const FormulaEditor = ({
   // 在字段数据变化时重新验证公式
   useEffect(() => {
     if (!isLoading && fields.length > 0) {
-      validateFormula(isSourceMode ? sourceFormula : displayFormula);
+      validateFormula(displayFormula);
     }
   }, [fields, isLoading]);
 
@@ -764,11 +848,6 @@ const FormulaEditor = ({
   // 规范化逗号 - 将中文逗号转换为英文逗号
   const normalizeCommas = (formula) => {
     return formula.replace(/，/g, ',');
-  };
-
-  // 根据模式获取当前公式
-  const getCurrentFormula = () => {
-    return isSourceMode ? sourceFormula : displayFormula;
   };
 
   // 将显示公式转换为源码公式
@@ -860,12 +939,11 @@ const FormulaEditor = ({
 
   // 检查光标是否在函数调用内
   const isInsideFunction = () => {
-    const formula = getCurrentFormula();
     let openParenCount = 0;
 
     for (let i = 0; i < cursorPosition; i++) {
-      if (formula[i] === '(') openParenCount++;
-      else if (formula[i] === ')') openParenCount--;
+      if (displayFormula[i] === '(') openParenCount++;
+      else if (displayFormula[i] === ')') openParenCount--;
     }
 
     return openParenCount > 0;
@@ -875,8 +953,7 @@ const FormulaEditor = ({
   const needsCommaBeforeInsertion = () => {
     if (!isInsideFunction()) return false;
 
-    const formula = getCurrentFormula();
-    const textBeforeCursor = formula.substring(0, cursorPosition).trim();
+    const textBeforeCursor = displayFormula.substring(0, cursorPosition).trim();
 
     // 检查最后一个非空白字符是否是逗号、左括号或者为空
     return !(
@@ -888,37 +965,26 @@ const FormulaEditor = ({
 
   // 在光标位置插入文本，并处理逗号
   const insertAtCursor = (displayText, sourceText) => {
-    const currentFormula = getCurrentFormula();
-    let insertText = isSourceMode ? sourceText : displayText;
+    let insertText = displayText;
 
     // 如果需要，添加逗号
     if (needsCommaBeforeInsertion()) {
       insertText = ', ' + insertText;
     }
 
-    const newFormula =
-      currentFormula.substring(0, cursorPosition) +
+    const newDisplayFormula =
+      displayFormula.substring(0, cursorPosition) +
       insertText +
-      currentFormula.substring(cursorPosition);
+      displayFormula.substring(cursorPosition);
 
-    let newSourceFormula, newDisplayFormula;
+    const newSourceFormula = convertDisplayToSource(newDisplayFormula);
 
-    if (isSourceMode) {
-      newSourceFormula = newFormula;
-      newDisplayFormula = convertSourceToDisplay(newFormula);
-      setSourceFormula(newSourceFormula);
-      setDisplayFormula(newDisplayFormula);
-    } else {
-      newDisplayFormula = newFormula;
-      newSourceFormula = convertDisplayToSource(newFormula);
-      setDisplayFormula(newDisplayFormula);
-      setSourceFormula(newSourceFormula);
-    }
-
+    setDisplayFormula(newDisplayFormula);
+    setSourceFormula(newSourceFormula);
     setCursorPosition(cursorPosition + insertText.length);
 
     // 验证更新后的公式
-    validateFormula(newFormula);
+    validateFormula(newDisplayFormula);
 
     // 调用onChange通知Form
     if (onChange) {
@@ -989,7 +1055,7 @@ const FormulaEditor = ({
     return params;
   };
 
-  // 改进后的公式验证函数，支持嵌套函数类型检测
+  // 公式验证函数，支持嵌套函数类型检测
   const validateFormula = (formula) => {
     if (isLoading || fields.length === 0) return []; // 如果字段正在加载，不执行验证
 
@@ -1362,21 +1428,14 @@ const FormulaEditor = ({
     return errors;
   };
 
-  // 切换源码模式
-  const toggleSourceMode = () => {
-    setIsSourceMode(!isSourceMode);
-    validateFormula(isSourceMode ? displayFormula : sourceFormula);
-  };
-
-  // 处理函数点击
+  // 处理函数点击 - 插入函数
   const handleFunctionClick = (func) => {
     setSelectedFunction(func);
 
-    // 修改：特殊处理函数插入，确保光标在括号内
+    // 特殊处理函数插入，确保光标在括号内
     const functionText = func.name + '()';
     const cursorOffsetInBrackets = 1; // 右括号前的位置
 
-    const currentFormula = getCurrentFormula();
     let insertText = functionText;
 
     // 如果需要，添加逗号
@@ -1384,27 +1443,19 @@ const FormulaEditor = ({
       insertText = ', ' + insertText;
     }
 
-    const newFormula =
-      currentFormula.substring(0, cursorPosition) +
+    const newDisplayFormula =
+      displayFormula.substring(0, cursorPosition) +
       insertText +
-      currentFormula.substring(cursorPosition);
+      displayFormula.substring(cursorPosition);
 
     // 计算光标应该在的新位置（括号内）
     const newCursorPosition = cursorPosition + insertText.length - cursorOffsetInBrackets;
 
-    let newSourceFormula, newDisplayFormula;
+    // 转换为源码格式
+    const newSourceFormula = convertDisplayToSource(newDisplayFormula);
 
-    if (isSourceMode) {
-      newSourceFormula = newFormula;
-      newDisplayFormula = convertSourceToDisplay(newFormula);
-      setSourceFormula(newSourceFormula);
-      setDisplayFormula(newDisplayFormula);
-    } else {
-      newDisplayFormula = newFormula;
-      newSourceFormula = convertDisplayToSource(newFormula);
-      setDisplayFormula(newDisplayFormula);
-      setSourceFormula(newSourceFormula);
-    }
+    setDisplayFormula(newDisplayFormula);
+    setSourceFormula(newSourceFormula);
 
     // 设置新的光标位置
     setCursorPosition(newCursorPosition);
@@ -1417,7 +1468,7 @@ const FormulaEditor = ({
     }, 10);
 
     // 验证更新后的公式
-    validateFormula(newFormula);
+    validateFormula(newDisplayFormula);
 
     // 调用onChange通知Form
     if (onChange) {
@@ -1428,45 +1479,56 @@ const FormulaEditor = ({
     }
   };
 
-  // 处理字段点击
+  // 处理字段点击 - 插入字段
   const handleFieldClick = (field) => {
     insertAtCursor(field.displayName, field.sourceName);
   };
 
-  // 处理公式输入变化
+  // 处理公式输入变化 - 修复光标问题
   const handleFormulaChange = (e) => {
+    // 获取输入值和额外信息
+    const rawValue = e.target.value;
+    const cursorPosition = e.target.cursorPosition;
+    const justTypedComma = e.target.justTypedComma;
+    const commaPosition = e.target.commaPosition;
+
+    // 保存中文逗号输入前的光标位置
+    const currentCursorPos = cursorPosition ? cursorPosition.start : 0;
+
     // 立即规范化逗号
-    const newValue = normalizeCommas(e.target.value);
+    const newDisplayValue = normalizeCommas(rawValue);
 
-    let newSourceFormula, newDisplayFormula;
+    // 转换为源码格式
+    const newSourceValue = convertDisplayToSource(newDisplayValue);
 
-    if (isSourceMode) {
-      newSourceFormula = newValue;
-      newDisplayFormula = convertSourceToDisplay(newValue);
-      setSourceFormula(newSourceFormula);
-      setDisplayFormula(newDisplayFormula);
+    // 如果这是一个中文逗号输入，保持光标位置在逗号之后
+    if (justTypedComma && commaPosition) {
+      setCursorPosition(commaPosition);
     } else {
-      newDisplayFormula = newValue;
-      newSourceFormula = convertDisplayToSource(newValue);
-      setDisplayFormula(newDisplayFormula);
-      setSourceFormula(newSourceFormula);
+      setCursorPosition(currentCursorPos);
     }
 
-    validateFormula(newValue);
+    setDisplayFormula(newDisplayValue);
+    setSourceFormula(newSourceValue);
 
-    // 调用onChange通知Form
+    // 验证更新后的公式
+    validateFormula(newDisplayValue);
+
+    // 调用onChange通知Form - 重要的是提供源码格式给父组件
     if (onChange) {
       onChange({
-        display: newDisplayFormula,
-        source: newSourceFormula,
+        display: newDisplayValue,
+        source: newSourceValue,
       });
     }
   };
 
+  // 处理光标位置变化
   const handleFormulaSelect = (e) => {
     setCursorPosition(e.target.selectionStart);
   };
 
+  // 函数信息显示相关
   const handleFunctionHover = (func) => {
     setHoveredFunction(func);
   };
@@ -1475,7 +1537,7 @@ const FormulaEditor = ({
     setHoveredFunction(null);
   };
 
-  // 获取筛选后的字段列表 - 移除对象类型字段
+  // 获取筛选后的字段列表
   const getFilteredFields = () => {
     if (isLoading) return [];
 
@@ -1485,12 +1547,11 @@ const FormulaEditor = ({
     if (!searchFieldTerm) return nonObjectFields;
 
     return nonObjectFields.filter((field) => {
-      const nameToSearch = isSourceMode ? field.sourceName : field.displayName;
-      return nameToSearch.toLowerCase().includes(searchFieldTerm.toLowerCase());
+      return field.displayName.toLowerCase().includes(searchFieldTerm.toLowerCase());
     });
   };
 
-  // 改进的计算公式结果函数 - 支持嵌套函数
+  // 计算公式结果函数 - 支持嵌套函数
   const calculateFormulaResult = (formula, testData) => {
     try {
       return evaluateExpression(formula, testData);
@@ -1621,28 +1682,25 @@ const FormulaEditor = ({
   const generateTestData = () => {
     if (isLoading || fields.length === 0) return '{}'; // 如果字段正在加载，返回空对象
 
-    const formula = sourceFormula;
     const testData = {};
-
-    // 提取字段引用
     const fieldReferences = [];
 
-    // 检查基本字段引用
+    // 提取字段引用
     fields.forEach((field) => {
-      if (formula.includes(field.sourceName)) {
+      if (displayFormula.includes(field.displayName)) {
         fieldReferences.push(field);
       }
     });
 
     // 创建样本数据
     fieldReferences.forEach((ref) => {
-      // 根据类型生成值
+      // 这里使用显示名称作为键，因为测试数据需要与显示公式中的字段名匹配
       if (ref.type === '数字') {
-        testData[ref.sourceName] = 100;
+        testData[ref.displayName] = 100;
       } else if (ref.type === '文本') {
-        testData[ref.sourceName] = '示例文本';
+        testData[ref.displayName] = '示例文本';
       } else {
-        testData[ref.sourceName] = true;
+        testData[ref.displayName] = true;
       }
     });
 
@@ -1659,7 +1717,7 @@ const FormulaEditor = ({
   const testFormula = () => {
     try {
       const testData = JSON.parse(testDataInput);
-      const result = calculateFormulaResult(sourceFormula, testData);
+      const result = calculateFormulaResult(displayFormula, testData);
 
       setTestResult(result);
       setTestError(null);
@@ -1698,17 +1756,10 @@ const FormulaEditor = ({
 
     const fieldPatterns = [];
 
-    if (isSourceMode) {
-      fields.forEach((field) => {
-        const escapedName = field.sourceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        fieldPatterns.push(escapedName);
-      });
-    } else {
-      fields.forEach((field) => {
-        const escapedName = field.displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        fieldPatterns.push(escapedName);
-      });
-    }
+    fields.forEach((field) => {
+      const escapedName = field.displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      fieldPatterns.push(escapedName);
+    });
 
     if (fieldPatterns.length === 0) {
       return null;
@@ -1765,14 +1816,6 @@ const FormulaEditor = ({
               >
                 测试
               </Button>
-              <Space>
-                <Text className="text-sm font-medium text-gray-700">源码模式</Text>
-                <Switch
-                  checked={isSourceMode}
-                  onChange={toggleSourceMode}
-                  className={isSourceMode ? 'bg-indigo-600' : ''}
-                />
-              </Space>
             </div>
             {onCancel && (
               <Button
@@ -1794,12 +1837,6 @@ const FormulaEditor = ({
                 <CodeOutlined className="mr-1.5 text-indigo-500" />
                 公式
               </div>
-              <Tag
-                color={isSourceMode ? 'blue' : 'default'}
-                className="mr-2"
-              >
-                {isSourceMode ? '源码格式' : '显示格式'}
-              </Tag>
               {validationErrors.length > 0 && (
                 <Tooltip
                   title={<ErrorPopoverContent errors={validationErrors} />}
@@ -1820,12 +1857,11 @@ const FormulaEditor = ({
 
             <HighlightedFormulaInput
               ref={inputRef}
-              value={getCurrentFormula()}
+              value={displayFormula}
               onChange={handleFormulaChange}
               onSelect={handleFormulaSelect}
               highlightPattern={getHighlightPattern()}
               functionNames={getFunctionNames()}
-              isSourceMode={isSourceMode}
             />
           </div>
         </div>
@@ -2082,7 +2118,7 @@ const FormulaEditor = ({
           </div>
         </div>
 
-        {/* 底部 - 移除确认按钮，只保留取消按钮（如果有必要） */}
+        {/* 底部操作区 */}
         {onCancel && (
           <div className="flex justify-end p-4 border-t border-gray-200 bg-white">
             <Button onClick={onCancel}>取消</Button>
@@ -2095,7 +2131,7 @@ const FormulaEditor = ({
         visible={testModalVisible}
         onCancel={hideTestModal}
         onTest={testFormula}
-        formula={sourceFormula}
+        formula={displayFormula}
         testDataInput={testDataInput}
         onTestDataChange={handleTestDataChange}
         onGenerateTestData={handleGenerateTestData}

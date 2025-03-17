@@ -1873,16 +1873,8 @@ const FormulaEditor = ({
                           strong
                           className="text-gray-800"
                         >
-                          {isSourceMode ? field.sourceName : field.displayName}
+                          {field.displayName}
                         </Text>
-                        {!isSourceMode && (
-                          <Text
-                            type="secondary"
-                            className="text-xs mt-0.5"
-                          >
-                            {field.sourceName}
-                          </Text>
-                        )}
                       </div>
                       <TypeBadge type={field.type} />
                     </div>

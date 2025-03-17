@@ -931,187 +931,198 @@ const FormulaEditor = ({
       });
     }
 
-    // 检查函数用法
-    const functionCalls = formula.match(/[A-Z][A-Za-z0-9]*\s*\(/g);
-
-    if (functionCalls) {
-      functionCalls.forEach((call) => {
-        const functionName = call.trim().slice(0, -1);
-        const functionDef = functionConfig.getFunction(functionName);
-
-        if (!functionDef) {
-          errors.push({
-            type: 'function',
-            message: `未定义的函数: ${functionName}`,
-            name: functionName,
-          });
-        } else {
-          // 验证函数参数
-          try {
-            const startPos = formula.indexOf(call) + call.length;
-            let endPos = startPos;
-            let openBrackets = 1;
-
-            // 查找匹配的闭合括号
-            while (endPos < formula.length && openBrackets > 0) {
-              if (formula[endPos] === '(') openBrackets++;
-              else if (formula[endPos] === ')') openBrackets--;
-              endPos++;
-            }
-
-            if (openBrackets === 0) {
-              const argsString = formula.substring(startPos, endPos - 1).trim();
-              const args = argsString ? argsString.split(',').map((arg) => arg.trim()) : [];
-
-              // 检查参数数量
-              if (args.length < functionDef.minParams) {
-                errors.push({
-                  type: 'function',
-                  message: `函数 ${functionName} 至少需要 ${functionDef.minParams} 个参数，但只提供了 ${args.length} 个`,
-                  name: functionName,
-                });
-              }
-
-              if (functionDef.maxParams !== null && args.length > functionDef.maxParams) {
-                errors.push({
-                  type: 'function',
-                  message: `函数 ${functionName} 最多接受 ${functionDef.maxParams} 个参数，但提供了 ${args.length} 个`,
-                  name: functionName,
-                });
-              }
-
-              // 检查参数类型和变量有效性
-              args.forEach((arg, index) => {
-                if (!isVariableValid(arg)) {
-                  errors.push({
-                    type: 'variable',
-                    message: `参数 "${arg}" 不是有效的变量或常量`,
-                    variable: arg,
-                  });
-                } else if (
-                  functionDef.paramTypes[0] !== 'any' &&
-                  !isParameterTypeValid(arg, functionDef.paramTypes[0])
-                ) {
-                  const fieldType = fieldTypeMap[arg.trim()];
-                  const expectedTypeName =
-                    functionDef.paramTypes[0] === 'number'
-                      ? '数字'
-                      : functionDef.paramTypes[0] === 'string'
-                      ? '文本'
-                      : '布尔值';
-
-                  errors.push({
-                    type: 'type',
-                    message: `函数 ${functionName} 参数 "${arg}" 类型错误，期望 ${expectedTypeName} 类型，实际是 ${
-                      fieldType || '未知'
-                    } 类型`,
-                    function: functionName,
-                    variable: arg,
-                  });
-                }
-              });
-            }
-          } catch (e) {
-            // 如果解析失败，跳过此函数的验证
-          }
-        }
-      });
+    // 如果有括号错误，先返回这些错误
+    if (errors.length > 0) {
+      return errors;
     }
 
-    // 新增: 检查整体公式结构
-    // 检查是否有无效的内容跟在合法表达式后面
-    const checkTrailingContent = () => {
-      // 简单解析公式的有效部分
-      let position = 0;
-      let inFunction = false;
-      let bracketCount = 0;
+    // 解析函数调用和参数的辅助函数
+    const parseFunctionCalls = (text) => {
+      const functionMatches = [];
+      let pos = 0;
 
-      // 解析主要表达式
-      while (position < formula.length) {
-        // 跳过空格
-        if (/\s/.test(formula[position])) {
-          position++;
-          continue;
+      while (pos < text.length) {
+        // 查找函数名称
+        const functionMatch = text.substring(pos).match(/[A-Z][A-Za-z0-9]*\s*\(/);
+        if (!functionMatch) break;
+
+        // 找到了潜在的函数调用
+        const functionName = functionMatch[0].trim().slice(0, -1);
+        const functionStart = pos + functionMatch.index;
+        const paramsStart = functionStart + functionMatch[0].length;
+
+        // 查找匹配的闭合括号
+        let openBrackets = 1;
+        let paramsEnd = paramsStart;
+
+        while (paramsEnd < text.length && openBrackets > 0) {
+          if (text[paramsEnd] === '(') openBrackets++;
+          else if (text[paramsEnd] === ')') openBrackets--;
+          paramsEnd++;
         }
 
-        // 检查函数调用开始
-        if (/[A-Z]/.test(formula[position]) && !inFunction) {
-          // 可能是函数名称开始
-          let funcNameEnd = position;
-          while (funcNameEnd < formula.length && /[A-Za-z0-9]/.test(formula[funcNameEnd])) {
-            funcNameEnd++;
-          }
+        if (openBrackets === 0) {
+          // 成功找到了闭合括号，解析参数
+          const paramsText = text.substring(paramsStart, paramsEnd - 1);
+          const params = parseParameters(paramsText);
 
-          // 跳过函数名后的空格
-          while (funcNameEnd < formula.length && /\s/.test(formula[funcNameEnd])) {
-            funcNameEnd++;
-          }
-
-          // 检查函数名后是否跟着左括号
-          if (funcNameEnd < formula.length && formula[funcNameEnd] === '(') {
-            position = funcNameEnd + 1; // 移动到左括号之后
-            inFunction = true;
-            bracketCount = 1;
-            continue;
-          }
+          functionMatches.push({
+            name: functionName,
+            start: functionStart,
+            end: paramsEnd,
+            params: params,
+          });
         }
 
-        // 处理括号
-        if (formula[position] === '(') {
-          bracketCount++;
-        } else if (formula[position] === ')') {
-          bracketCount--;
-          if (bracketCount === 0 && inFunction) {
-            // 函数调用已结束
-            inFunction = false;
-            position++;
-
-            // 检查函数调用后是否有非空字符
-            let hasTrailingContent = false;
-            for (let i = position; i < formula.length; i++) {
-              if (!/\s/.test(formula[i])) {
-                hasTrailingContent = true;
-                errors.push({
-                  type: 'syntax',
-                  message: `位置 ${i + 1} 处有非法的尾随内容: "${formula.substring(i)}"`,
-                  position: i,
-                });
-                break;
-              }
-            }
-
-            if (hasTrailingContent) {
-              break;
-            }
-
-            // 如果没有尾随内容，则公式结束
-            break;
-          }
-        }
-
-        // 移动到下一个字符
-        position++;
+        // 继续从函数结束位置搜索
+        pos = paramsEnd;
       }
 
-      // 如果不是函数调用，检查是否是单个变量引用
-      if (!inFunction && position === 0) {
-        // 尝试解析为单个变量引用
-        const variableMatch = formula.match(/^\s*([A-Za-z0-9_.]+)\s*$/);
-        if (variableMatch) {
-          const variable = variableMatch[1];
-          if (!isVariableValid(variable)) {
-            errors.push({
-              type: 'variable',
-              message: `"${variable}" 不是有效的变量或常量`,
-              variable,
-            });
-          }
-          return; // 是合法的单变量引用，不需要检查尾随内容
-        }
-      }
+      return functionMatches;
     };
 
-    checkTrailingContent();
+    // 解析参数列表的辅助函数，考虑嵌套函数
+    const parseParameters = (paramsText) => {
+      const params = [];
+      let currentParam = '';
+      let openBrackets = 0;
+
+      for (let i = 0; i < paramsText.length; i++) {
+        const char = paramsText[i];
+
+        if (char === '(') {
+          openBrackets++;
+          currentParam += char;
+        } else if (char === ')') {
+          openBrackets--;
+          currentParam += char;
+        } else if (char === ',' && openBrackets === 0) {
+          // 只有在不在嵌套函数内部时，才将逗号视为参数分隔符
+          params.push(currentParam.trim());
+          currentParam = '';
+        } else {
+          currentParam += char;
+        }
+      }
+
+      // 添加最后一个参数
+      if (currentParam.trim()) {
+        params.push(currentParam.trim());
+      }
+
+      return params;
+    };
+
+    // 检查函数用法
+    const functionCalls = parseFunctionCalls(formula);
+
+    // 检查整体公式结构
+    if (functionCalls.length > 0) {
+      // 找到最后一个函数调用结束的位置
+      const lastFunctionCall = functionCalls.reduce(
+        (last, current) => (current.end > last.end ? current : last),
+        functionCalls[0],
+      );
+
+      // 检查最后一个函数调用后是否有非空白字符
+      const trailingContent = formula.substring(lastFunctionCall.end).trim();
+      if (trailingContent.length > 0) {
+        errors.push({
+          type: 'syntax',
+          message: `函数调用后存在无效内容: "${trailingContent}"`,
+          position: lastFunctionCall.end,
+        });
+      }
+    } else {
+      // 如果没有函数调用，检查是否是有效的单个变量或常量
+      const singleTokenMatch = formula.trim().match(/^([A-Za-z0-9_.]+)$/);
+      if (singleTokenMatch) {
+        const token = singleTokenMatch[1];
+        if (!isVariableValid(token) && !isNumericLiteral(token) && !isBooleanLiteral(token)) {
+          errors.push({
+            type: 'variable',
+            message: `"${token}" 不是有效的变量或常量`,
+            variable: token,
+          });
+        }
+      } else if (formula.trim() && !isNumericLiteral(formula.trim())) {
+        // 不是函数调用、单变量或数字字面量，可能是语法错误
+        errors.push({
+          type: 'syntax',
+          message: `公式格式不正确: "${formula.trim()}"`,
+        });
+      }
+    }
+
+    // 验证每个函数调用
+    for (const call of functionCalls) {
+      const functionName = call.name;
+      const functionDef = functionConfig.getFunction(functionName);
+
+      if (!functionDef) {
+        errors.push({
+          type: 'function',
+          message: `未定义的函数: ${functionName}`,
+          name: functionName,
+        });
+        continue;
+      }
+
+      // 检查参数数量
+      if (call.params.length < functionDef.minParams) {
+        errors.push({
+          type: 'function',
+          message: `函数 ${functionName} 至少需要 ${functionDef.minParams} 个参数，但只提供了 ${call.params.length} 个`,
+          name: functionName,
+        });
+      }
+
+      if (functionDef.maxParams !== null && call.params.length > functionDef.maxParams) {
+        errors.push({
+          type: 'function',
+          message: `函数 ${functionName} 最多接受 ${functionDef.maxParams} 个参数，但提供了 ${call.params.length} 个`,
+          name: functionName,
+        });
+      }
+
+      // 检查参数
+      for (const param of call.params) {
+        // 检查参数是否是嵌套函数调用
+        if (param.match(/^[A-Z][A-Za-z0-9]*\s*\(/)) {
+          // 递归验证嵌套函数
+          continue; // 嵌套函数会被单独验证
+        }
+
+        // 检查变量引用
+        if (!isVariableValid(param)) {
+          errors.push({
+            type: 'variable',
+            message: `参数 "${param}" 不是有效的变量或常量`,
+            variable: param,
+          });
+        } else if (
+          functionDef.paramTypes[0] !== 'any' &&
+          !isParameterTypeValid(param, functionDef.paramTypes[0])
+        ) {
+          const fieldType = fieldTypeMap[param.trim()];
+          const expectedTypeName =
+            functionDef.paramTypes[0] === 'number'
+              ? '数字'
+              : functionDef.paramTypes[0] === 'string'
+              ? '文本'
+              : '布尔值';
+
+          errors.push({
+            type: 'type',
+            message: `函数 ${functionName} 参数 "${param}" 类型错误，期望 ${expectedTypeName} 类型，实际是 ${
+              fieldType || '未知'
+            } 类型`,
+            function: functionName,
+            variable: param,
+          });
+        }
+      }
+    }
 
     setValidationErrors(errors);
     return errors;

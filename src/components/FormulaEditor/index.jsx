@@ -30,6 +30,7 @@ import {
   ExperimentOutlined,
   LoadingOutlined,
   CalculatorOutlined,
+  AlertOutlined,
 } from '@ant-design/icons';
 
 // 导入常量
@@ -39,6 +40,7 @@ import {
   FIELD_TYPE_CONFIG,
   DEFAULT_FORMULA,
   DEFAULT_TEST_DATA,
+  TYPE_MAP,
 } from './constants';
 
 const { Title, Text, Paragraph } = Typography;
@@ -412,26 +414,71 @@ const HighlightedFormulaInput = React.forwardRef(
   },
 );
 
-// 错误弹窗内容
+// 错误弹窗内容 - 支持显示更多类型的错误
 const ErrorPopoverContent = ({ errors }) => {
+  // 辅助函数 - 根据错误类型获取图标
+  const getErrorIcon = (errorType) => {
+    switch (errorType) {
+      case 'function':
+        return <FunctionOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />;
+      case 'variable':
+        return <FileTextOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />;
+      case 'bracket':
+        return <BranchesOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />;
+      case 'type':
+      case 'returnType':
+        return <ExclamationCircleOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />;
+      default:
+        return <WarningOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />;
+    }
+  };
+
+  // 辅助函数 - 根据错误类型获取标题
+  const getErrorTitle = (error) => {
+    switch (error.type) {
+      case 'function':
+        return `函数错误: ${error.name}`;
+      case 'variable':
+        return `变量错误: ${error.variable}`;
+      case 'bracket':
+        return `括号错误: 位置 ${error.position + 1}`;
+      case 'type':
+        return `类型错误: ${error.variable || `参数 ${error.paramIndex + 1}`}`;
+      case 'returnType':
+        return `返回类型错误: ${error.function}`;
+      case 'syntax':
+        return '语法错误';
+      default:
+        return '验证错误';
+    }
+  };
+
   return (
     <div className="max-w-lg max-h-80 overflow-y-auto">
-      <div className="font-medium text-red-600 mb-2">发现以下错误：</div>
+      <div className="font-medium text-red-600 mb-2 flex items-center">
+        <AlertOutlined className="mr-1.5" />
+        发现以下错误：
+      </div>
       <List
         size="small"
         dataSource={errors}
         renderItem={(error, index) => (
           <List.Item className="py-1.5 border-b border-red-100">
             <div className="flex items-start">
-              <WarningOutlined className="text-red-500 mr-2 mt-1 flex-shrink-0" />
+              {getErrorIcon(error.type)}
               <div>
-                <div className="font-medium">
-                  {error.type === 'function' && `函数错误: ${error.name}`}
-                  {error.type === 'variable' && `变量错误: ${error.variable}`}
-                  {error.type === 'bracket' && `括号错误: 位置 ${error.position + 1}`}
-                  {error.type === 'type' && `类型错误: ${error.variable}`}
-                </div>
+                <div className="font-medium">{getErrorTitle(error)}</div>
                 <div className="text-xs text-gray-600 mt-1">{error.message}</div>
+
+                {/* 显示类型错误的附加信息 */}
+                {(error.type === 'type' || error.type === 'returnType') &&
+                  error.expectedType &&
+                  error.actualType && (
+                    <div className="mt-1.5 text-xs">
+                      <Tag color="blue">期望: {error.expectedType}</Tag>
+                      <Tag color="orange">实际: {error.actualType}</Tag>
+                    </div>
+                  )}
               </div>
             </div>
           </List.Item>
@@ -895,7 +942,7 @@ const FormulaEditor = ({
     }
   };
 
-  // 验证公式格式
+  // 改进后的公式验证函数，支持嵌套函数类型检测
   const validateFormula = (formula) => {
     if (isLoading || fields.length === 0) return []; // 如果字段正在加载，不执行验证
 
@@ -937,7 +984,44 @@ const FormulaEditor = ({
       return errors;
     }
 
-    // 解析函数调用和参数的辅助函数
+    // 判断类型兼容性的辅助函数
+    const isTypeCompatible = (sourceType, targetType) => {
+      // 如果目标类型是'any'，任何类型都兼容
+      if (targetType === 'any') return true;
+
+      // 如果源类型和目标类型相同，兼容
+      if (sourceType === targetType) return true;
+
+      // 检查字段类型到JS类型的映射兼容性
+      if (TYPE_MAP[sourceType] === targetType) return true;
+
+      return false;
+    };
+
+    // 获取变量或字面量值的类型
+    const getValueType = (value) => {
+      const trimmed = value.trim();
+
+      // 检查数字字面量
+      if (isNumericLiteral(trimmed)) return 'number';
+
+      // 检查布尔字面量
+      if (isBooleanLiteral(trimmed)) return 'boolean';
+
+      // 检查字符串字面量
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return 'string';
+
+      // 检查字段引用
+      const fieldType = fieldTypeMap[trimmed];
+      if (fieldType) {
+        // 将字段类型映射到JS类型
+        return TYPE_MAP[fieldType] || fieldType;
+      }
+
+      return null; // 未知类型
+    };
+
+    // 解析函数调用和参数的辅助函数，增加对返回类型的推断
     const parseFunctionCalls = (text, startOffset = 0) => {
       const functionMatches = [];
       let pos = 0;
@@ -967,22 +1051,32 @@ const FormulaEditor = ({
           const paramsText = text.substring(paramsStart, paramsEnd - 1);
           const params = parseParameters(paramsText);
 
-          // 绝对位置信息
+          // 获取函数定义
+          const functionDef = functionConfig.getFunction(functionName);
+
+          // 计算绝对位置信息
           const absoluteStart = functionStart + startOffset;
           const absoluteEnd = paramsEnd + startOffset;
 
-          functionMatches.push({
+          // 创建函数调用对象，包含返回类型信息
+          const functionCall = {
             name: functionName,
             start: absoluteStart,
             end: absoluteEnd,
             params: params,
-            isNestedCall: startOffset > 0, // 根据偏移量判断是否为嵌套调用
+            paramTypes: [], // 将存储每个参数的类型
+            nestedFunctions: [], // 将存储每个参数中的嵌套函数调用
+            isNestedCall: startOffset > 0,
             fullText: text.substring(functionStart, paramsEnd),
-          });
+            returnType: functionDef ? functionDef.returnType : null,
+          };
+
+          functionMatches.push(functionCall);
 
           // 递归解析每个参数中可能存在的嵌套函数
           for (let i = 0; i < params.length; i++) {
             const param = params[i];
+
             if (param.match(/[A-Z][A-Za-z0-9]*\s*\(/)) {
               // 计算参数在原始文本中的位置
               let paramOffset = 0;
@@ -993,7 +1087,27 @@ const FormulaEditor = ({
               // 嵌套函数的起始偏移量
               const nestedOffset = absoluteStart + functionName.length + 1 + paramOffset;
               const nestedFunctions = parseFunctionCalls(param, nestedOffset);
+
+              // 将嵌套函数保存到当前函数的参数信息中
+              functionCall.nestedFunctions[i] = nestedFunctions;
+
+              // 将嵌套函数添加到总函数列表
               functionMatches.push(...nestedFunctions);
+
+              // 记录嵌套函数的返回类型作为参数类型
+              if (nestedFunctions.length > 0) {
+                // 假设参数就是一个单独的嵌套函数调用
+                const outerNestedCall = nestedFunctions.find(
+                  (call) => !call.isNestedCall || call.start === nestedOffset,
+                );
+
+                if (outerNestedCall) {
+                  functionCall.paramTypes[i] = outerNestedCall.returnType;
+                }
+              }
+            } else {
+              // 对于非函数调用参数，直接确定其类型
+              functionCall.paramTypes[i] = getValueType(param);
             }
           }
         }
@@ -1005,7 +1119,7 @@ const FormulaEditor = ({
       return functionMatches;
     };
 
-    // 解析参数列表的辅助函数，考虑嵌套函数
+    // 解析参数列表的辅助函数，考虑嵌套函数调用
     const parseParameters = (paramsText) => {
       if (!paramsText.trim()) return [];
 
@@ -1091,7 +1205,7 @@ const FormulaEditor = ({
       return errors;
     }
 
-    // 找到真正的顶层函数调用
+    // 找到真正的顶层函数调用(不是嵌套在其他函数中的调用)
     const rootCalls = functionCalls.filter((call) => !call.isNestedCall);
 
     // 检查公式结构 - 检查是否由单个函数组成或者直接是变量/常量
@@ -1156,46 +1270,86 @@ const FormulaEditor = ({
       // 检查每个参数
       for (let i = 0; i < call.params.length; i++) {
         const param = call.params[i];
+        const paramType = call.paramTypes[i]; // 从函数调用对象获取的参数类型
 
-        // 跳过嵌套函数调用参数的验证，因为它们已经被单独处理
+        // 获取此参数位置的预期类型（支持可变参数）
+        const expectedParamType =
+          functionDef.paramTypes[Math.min(i, functionDef.paramTypes.length - 1)];
+
+        // 如果参数是嵌套函数调用
         if (param.match(/^[A-Z][A-Za-z0-9]*\s*\(/)) {
-          continue;
+          // 检查嵌套函数返回类型是否与当前函数参数类型兼容
+          if (paramType && expectedParamType !== 'any') {
+            if (!isTypeCompatible(paramType, expectedParamType)) {
+              errors.push({
+                type: 'returnType',
+                message: `函数 ${functionName} 的第 ${
+                  i + 1
+                } 个参数需要类型 '${expectedParamType}'，但嵌套函数返回类型为 '${paramType}'`,
+                function: functionName,
+                paramIndex: i,
+                expectedType: expectedParamType,
+                actualType: paramType,
+              });
+            }
+          }
         }
-
         // 对于非嵌套函数参数，验证变量或常量
-        if (
-          !isNumericLiteral(param) &&
-          !isBooleanLiteral(param) &&
-          !param.startsWith('"') &&
-          !isVariableValid(param)
-        ) {
-          errors.push({
-            type: 'variable',
-            message: `参数 "${param}" 不是有效的变量或常量`,
-            variable: param,
-          });
-        } else if (
-          functionDef.paramTypes.length > 0 &&
-          functionDef.paramTypes[0] !== 'any' &&
-          !isParameterTypeValid(
-            param,
-            functionDef.paramTypes[Math.min(i, functionDef.paramTypes.length - 1)],
-          )
-        ) {
-          // 参数类型检查，支持可变参数函数
-          const paramType = functionDef.paramTypes[Math.min(i, functionDef.paramTypes.length - 1)];
-          const fieldType = fieldTypeMap[param.trim()];
-          const expectedTypeName =
-            paramType === 'number' ? '数字' : paramType === 'string' ? '文本' : '布尔值';
+        else {
+          // 先检查是否是有效变量或常量
+          if (
+            !isNumericLiteral(param) &&
+            !isBooleanLiteral(param) &&
+            !param.startsWith('"') &&
+            !isVariableValid(param)
+          ) {
+            errors.push({
+              type: 'variable',
+              message: `参数 "${param}" 不是有效的变量或常量`,
+              variable: param,
+            });
+          }
+          // 然后检查类型是否符合期望
+          else if (expectedParamType !== 'any' && !isParameterTypeValid(param, expectedParamType)) {
+            // 获取实际类型用于错误消息
+            const actualType = getValueType(param);
+            const expectedTypeName =
+              expectedParamType === 'number'
+                ? '数字'
+                : expectedParamType === 'string'
+                ? '文本'
+                : expectedParamType === 'boolean'
+                ? '布尔值'
+                : expectedParamType;
 
-          errors.push({
-            type: 'type',
-            message: `函数 ${functionName} 参数 "${param}" 类型错误，期望 ${expectedTypeName} 类型，实际是 ${
-              fieldType || '未知'
-            } 类型`,
-            function: functionName,
-            variable: param,
-          });
+            errors.push({
+              type: 'type',
+              message: `函数 ${functionName} 的第 ${
+                i + 1
+              } 个参数 "${param}" 类型错误，期望 ${expectedTypeName} 类型，实际是 ${
+                actualType || '未知'
+              } 类型`,
+              function: functionName,
+              variable: param,
+              paramIndex: i,
+              expectedType: expectedParamType,
+              actualType: actualType,
+            });
+          }
+        }
+      }
+
+      // 检查IF函数的特殊情况 - 推断返回类型
+      if (functionName === 'IF' && call.params.length === 3) {
+        // 如果true和false分支返回不同类型，IF函数的返回类型应该是'any'
+        const trueValueType = call.paramTypes[1];
+        const falseValueType = call.paramTypes[2];
+
+        if (trueValueType && falseValueType && trueValueType !== falseValueType) {
+          call.returnType = 'any';
+        } else if (trueValueType) {
+          // 如果两个分支类型相同，返回类型就是分支类型
+          call.returnType = trueValueType;
         }
       }
     }
@@ -1662,7 +1816,7 @@ const FormulaEditor = ({
                 <Tooltip
                   title={<ErrorPopoverContent errors={validationErrors} />}
                   color="#fff"
-                  overlayInnerStyle={{ color: '#333' }}
+                  styles={{ body: { color: '#333' } }}
                   placement="right"
                 >
                   <Tag

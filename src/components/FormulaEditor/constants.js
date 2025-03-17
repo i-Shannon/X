@@ -16,6 +16,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 1,
         maxParams: null,
         paramTypes: ['number'],
+        returnType: 'number',
         evaluate: (...args) => args.reduce((sum, val) => sum + val, 0),
       },
       {
@@ -26,6 +27,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 2,
         maxParams: 2,
         paramTypes: ['number'],
+        returnType: 'number',
         evaluate: (a, b) => a - b,
       },
       {
@@ -36,6 +38,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 2,
         maxParams: null,
         paramTypes: ['number'],
+        returnType: 'number',
         evaluate: (...args) => args.reduce((product, val) => product * val, 1),
       },
       {
@@ -46,6 +49,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 2,
         maxParams: 2,
         paramTypes: ['number'],
+        returnType: 'number',
         evaluate: (a, b) => (b !== 0 ? a / b : 'Error: Division by zero'),
       },
     ],
@@ -61,6 +65,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 3,
         maxParams: 3,
         paramTypes: ['boolean', 'any', 'any'],
+        returnType: 'any', // IF可以返回任何类型，取决于参数
         evaluate: (condition, trueVal, falseVal) => (condition ? trueVal : falseVal),
       },
       {
@@ -71,6 +76,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 2,
         maxParams: null,
         paramTypes: ['boolean'],
+        returnType: 'boolean',
         evaluate: (...args) => args.every(Boolean),
       },
       {
@@ -81,6 +87,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 2,
         maxParams: null,
         paramTypes: ['boolean'],
+        returnType: 'boolean',
         evaluate: (...args) => args.some(Boolean),
       },
     ],
@@ -96,6 +103,7 @@ export const DEFAULT_FUNCTION_CATEGORIES = [
         minParams: 1,
         maxParams: null,
         paramTypes: ['string'],
+        returnType: 'string',
         evaluate: (...args) => args.join(''),
       },
     ],
@@ -108,6 +116,15 @@ export const FIELD_TYPE_CONFIG = {
   '文本': { color: 'green', label: '文本' },
   '时间': { color: 'purple', label: '时间' },
   'object': { color: 'default', label: '对象' },
+};
+
+// 类型映射关系 - 将显示类型映射到技术类型
+export const TYPE_MAP = {
+  '数字': 'number',
+  '文本': 'string',
+  '时间': 'date',
+  'object': 'object',
+  'boolean': 'boolean'
 };
 
 // 默认的初始公式

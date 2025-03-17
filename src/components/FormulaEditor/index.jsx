@@ -845,27 +845,6 @@ const FormulaEditor = ({
     return result;
   };
 
-  // 将源码公式转换为显示公式
-  const convertSourceToDisplay = (formula) => {
-    if (isLoading || fields.length === 0) return formula; // 如果字段正在加载，不执行转换
-
-    let result = formula;
-    // 先规范化逗号
-    result = normalizeCommas(result);
-
-    // 按长度排序键（最长的先）以防止部分匹配
-    const sourceToDisplayMap = getSourceToDisplayMap();
-    const keys = Object.keys(sourceToDisplayMap).sort((a, b) => b.length - a.length);
-
-    for (const key of keys) {
-      // 使用正则表达式防止部分匹配
-      const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-      result = result.replace(regex, sourceToDisplayMap[key]);
-    }
-
-    return result;
-  };
-
   // 检查字符串是否为数字字面量
   const isNumericLiteral = (str) => {
     return /^-?\d+(\.\d+)?$/.test(str.trim());

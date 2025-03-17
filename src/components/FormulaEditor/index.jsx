@@ -466,8 +466,12 @@ const HighlightedFormulaInput = React.forwardRef(
         <div
           ref={inputRef}
           contentEditable="true"
-          className="block w-full py-2 px-3 text-base font-mono 
+          className="block py-2 px-3 text-base font-mono 
           focus:outline-none resize-none break-words"
+          style={{
+            border: '1px solid #ccc',
+            borderRadius: '.375rem',
+          }}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onFocus={handleFocus}

@@ -423,8 +423,8 @@ const HighlightedFormulaInput = React.forwardRef(
 
               // 如果刚输入了中文逗号并被转换为英文逗号，保持光标在逗号之后
               if (needAdjustForComma && commaPos) {
-                // 光标应该保持在逗号的位置
-                targetPosition = commaPos + 1;
+                // 光标应该保持在逗号的位置(已转换为英文逗号)
+                targetPosition = commaPos;
               } else {
                 // 否则使用保存的位置
                 targetPosition = currentPosition.start;

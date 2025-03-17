@@ -596,7 +596,7 @@ const TestModal = ({
           <div className="font-mono bg-white p-2.5 rounded-md border border-green-200 shadow-inner">
             {typeof testResult === 'object'
               ? JSON.stringify(testResult, null, 2)
-              : testResult.toString()}
+              : testResult?.toString()}
           </div>
         </div>
       )}

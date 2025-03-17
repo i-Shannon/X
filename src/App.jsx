@@ -131,23 +131,6 @@ const App = () => {
           </Form.Item>
         </Form>
       </Card>
-
-      {savedFormula && (
-        <div className="mt-6">
-          <Divider orientation="left">公式测试与预览</Divider>
-          <Card
-            title="已保存的公式"
-            className="bg-gray-50"
-          >
-            <div className="font-mono bg-white p-3 rounded-md border border-gray-300">
-              {savedFormula}
-            </div>
-            <div className="mt-4">
-              <p className="text-gray-600">这里可以添加公式的测试结果、应用场景说明等信息。</p>
-            </div>
-          </Card>
-        </div>
-      )}
     </div>
   );
 };

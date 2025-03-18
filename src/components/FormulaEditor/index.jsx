@@ -88,15 +88,18 @@ const TypeBadge = ({ type }) => {
   );
 };
 
+// 检查是否包含中文逗号
+const hasChineseComma = (text) => {
+  return text.includes('，');
+};
+
 // 改进的高亮公式输入组件 - 使用现代DOM API
 const HighlightedFormulaInput = React.forwardRef(
   ({ value, onChange, onSelect, highlightPattern, functionNames }, ref) => {
     const inputRef = useRef(null);
     const [hasFocus, setHasFocus] = useState(false);
     const [lastCursorPosition, setLastCursorPosition] = useState(null);
-    const [justTypedComma, setJustTypedComma] = useState(false);
     const lastValueRef = useRef('');
-    const commaPositionRef = useRef(null);
 
     // 获取当前光标位置和选择范围
     const getCaretPosition = () => {
@@ -161,27 +164,27 @@ const HighlightedFormulaInput = React.forwardRef(
         const selection = window.getSelection();
         const range = document.createRange();
 
-        // 找到对应的文本节点和偏移量
+        // 找到正确的文本节点和偏移量
         let currentPosition = 0;
         let startNode = null;
         let startOffset = 0;
         let endNode = null;
         let endOffset = 0;
 
-        // 递归查找正确的节点和偏移量
+        // 递归查找位置的函数
         const findPosition = (node) => {
           // 对于文本节点，检查位置是否在范围内
           if (node.nodeType === Node.TEXT_NODE) {
             const nodeLength = node.length;
 
-            // 找起始位置
-            if (!startNode && currentPosition + nodeLength >= start) {
+            // 查找起始位置
+            if (currentPosition <= start && currentPosition + nodeLength >= start) {
               startNode = node;
               startOffset = start - currentPosition;
             }
 
-            // 找结束位置
-            if (!endNode && currentPosition + nodeLength >= end) {
+            // 查找结束位置
+            if (currentPosition <= end && currentPosition + nodeLength >= end) {
               endNode = node;
               endOffset = end - currentPosition;
               return true;
@@ -191,10 +194,38 @@ const HighlightedFormulaInput = React.forwardRef(
           }
           // 对于元素节点，递归遍历子节点
           else if (node.nodeType === Node.ELEMENT_NODE) {
-            for (let i = 0; i < node.childNodes.length; i++) {
-              // 如果找到结束位置，停止遍历
-              if (findPosition(node.childNodes[i])) {
-                return true;
+            // 处理span元素的特殊情况（高亮内容）
+            if (node.tagName === 'SPAN') {
+              // 如果光标应该在这个高亮span内
+              if (currentPosition <= start && currentPosition + node.textContent.length >= start) {
+                // 在span内查找文本节点
+                for (let i = 0; i < node.childNodes.length; i++) {
+                  if (node.childNodes[i].nodeType === Node.TEXT_NODE) {
+                    startNode = node.childNodes[i];
+                    startOffset = start - currentPosition;
+                    break;
+                  }
+                }
+              }
+
+              if (currentPosition <= end && currentPosition + node.textContent.length >= end) {
+                // 在span内查找文本节点
+                for (let i = 0; i < node.childNodes.length; i++) {
+                  if (node.childNodes[i].nodeType === Node.TEXT_NODE) {
+                    endNode = node.childNodes[i];
+                    endOffset = end - currentPosition;
+                    return true;
+                  }
+                }
+              }
+
+              currentPosition += node.textContent.length;
+            } else {
+              // 普通元素 - 遍历子节点
+              for (let i = 0; i < node.childNodes.length; i++) {
+                if (findPosition(node.childNodes[i])) {
+                  return true;
+                }
               }
             }
           }
@@ -248,6 +279,8 @@ const HighlightedFormulaInput = React.forwardRef(
 
       let lastIndex = 0;
       const segments = [];
+
+      // 改进的函数模式，使用单词边界
       const functionPattern = new RegExp(`\\b(${functionNames.join('|')})\\b(?=\\s*\\()`, 'g');
 
       // 匹配函数
@@ -256,8 +289,12 @@ const HighlightedFormulaInput = React.forwardRef(
 
       // 如果提供了字段模式，添加字段匹配
       if (highlightPattern) {
-        const fieldMatches = Array.from(text.matchAll(highlightPattern));
-        allMatches = [...allMatches, ...fieldMatches];
+        try {
+          const fieldMatches = Array.from(text.matchAll(highlightPattern));
+          allMatches = [...allMatches, ...fieldMatches];
+        } catch (error) {
+          console.error('匹配字段模式时出错:', error);
+        }
       }
 
       // 按索引排序匹配项
@@ -300,21 +337,11 @@ const HighlightedFormulaInput = React.forwardRef(
       setLastCursorPosition(getCaretPosition());
     };
 
-    // 处理输入事件 - 改进以检测中文逗号
+    // 处理输入事件 - 移除中文逗号特殊处理
     const handleInput = (e) => {
       // 获取当前输入内容和光标位置
       const plainText = inputRef.current.innerText;
       const currentPosition = getCaretPosition();
-
-      // 检查是否刚输入了中文逗号
-      const wasChineseComma =
-        currentPosition.start > 0 && plainText[currentPosition.start - 1] === '，';
-
-      if (wasChineseComma) {
-        // 记录逗号的位置，用于替换后定位光标
-        commaPositionRef.current = currentPosition.start;
-        setJustTypedComma(true);
-      }
 
       // 保存当前光标位置
       setLastCursorPosition(currentPosition);
@@ -325,8 +352,6 @@ const HighlightedFormulaInput = React.forwardRef(
         target: {
           value: plainText,
           cursorPosition: currentPosition,
-          justTypedComma: wasChineseComma,
-          commaPosition: wasChineseComma ? currentPosition.start : null,
         },
       });
     };
@@ -397,7 +422,7 @@ const HighlightedFormulaInput = React.forwardRef(
       }
     };
 
-    // 当value变化时更新高亮内容 - 改进光标处理
+    // 当value变化时更新高亮内容 - 简化光标处理逻辑
     useEffect(() => {
       if (!inputRef.current) return;
 
@@ -406,43 +431,28 @@ const HighlightedFormulaInput = React.forwardRef(
 
       // 只有当纯文本内容与value不匹配时更新
       if (currentText !== value) {
-        // 保存光标位置和特殊标志
+        // 保存光标位置
         const currentPosition = lastCursorPosition || { start: value.length, end: value.length };
-        const needAdjustForComma = justTypedComma;
-        const commaPos = commaPositionRef.current;
 
         // 更新高亮内容
         inputRef.current.innerHTML = getHighlightedHTML(value);
 
-        // 恢复光标位置，特殊处理逗号情况
+        // 恢复光标位置
         if (document.activeElement === inputRef.current) {
           try {
             setTimeout(() => {
-              // 确定正确的光标位置
-              let targetPosition;
-
-              // 如果刚输入了中文逗号并被转换为英文逗号，保持光标在逗号之后
-              if (needAdjustForComma && commaPos) {
-                // 光标应该保持在逗号的位置(已转换为英文逗号)
-                targetPosition = commaPos;
-              } else {
-                // 否则使用保存的位置
-                targetPosition = currentPosition.start;
-              }
+              // 使用保存的位置
+              const targetPosition = currentPosition.start;
 
               // 设置光标位置
               setCaretPosition(targetPosition, targetPosition);
-
-              // 重置中文逗号标志和位置
-              setJustTypedComma(false);
-              commaPositionRef.current = null;
-            }, 10);
+            }, 0);
           } catch (e) {
             console.error('恢复光标位置时出错', e);
           }
         }
       }
-    }, [value, functionNames, highlightPattern, justTypedComma]);
+    }, [value, functionNames, highlightPattern]);
 
     // 暴露方法给父组件
     React.useImperativeHandle(ref, () => ({
@@ -817,20 +827,12 @@ const FormulaEditor = ({
     }));
   };
 
-  // 工具函数
-
-  // 规范化逗号 - 将中文逗号转换为英文逗号
-  const normalizeCommas = (formula) => {
-    return formula.replace(/，/g, ',');
-  };
-
   // 将显示公式转换为源码公式
   const convertDisplayToSource = (formula) => {
     if (isLoading || fields.length === 0) return formula; // 如果字段正在加载，不执行转换
 
     let result = formula;
-    // 先规范化逗号
-    result = normalizeCommas(result);
+    // 不再执行逗号规范化
 
     // 按长度排序键（最长的先）以防止部分匹配
     const displayToSourceMap = getDisplayToSourceMap();
@@ -840,6 +842,26 @@ const FormulaEditor = ({
       // 使用正则表达式防止部分匹配
       const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
       result = result.replace(regex, displayToSourceMap[key]);
+    }
+
+    return result;
+  };
+
+  // 将源码公式转换为显示公式
+  const convertSourceToDisplay = (formula) => {
+    if (isLoading || fields.length === 0) return formula; // 如果字段正在加载，不执行转换
+
+    let result = formula;
+    // 不再执行逗号规范化
+
+    // 按长度排序键（最长的先）以防止部分匹配
+    const sourceToDisplayMap = getSourceToDisplayMap();
+    const keys = Object.keys(sourceToDisplayMap).sort((a, b) => b.length - a.length);
+
+    for (const key of keys) {
+      // 使用正则表达式防止部分匹配
+      const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      result = result.replace(regex, sourceToDisplayMap[key]);
     }
 
     return result;
@@ -1014,6 +1036,16 @@ const FormulaEditor = ({
 
     const errors = [];
     const fieldTypeMap = getFieldTypeMap();
+
+    // 检查中文逗号
+    if (hasChineseComma(formula)) {
+      const commaIndex = formula.indexOf('，');
+      errors.push({
+        type: 'syntax',
+        message: `公式中包含中文逗号（，），请使用英文逗号（,）`,
+        position: commaIndex,
+      });
+    }
 
     // 检查括号匹配
     const stack = [];
@@ -1437,29 +1469,19 @@ const FormulaEditor = ({
     insertAtCursor(field.displayName, field.sourceName);
   };
 
-  // 处理公式输入变化 - 修复光标问题
+  // 处理公式输入变化
   const handleFormulaChange = (e) => {
     // 获取输入值和额外信息
     const rawValue = e.target.value;
     const cursorPosition = e.target.cursorPosition;
-    const justTypedComma = e.target.justTypedComma;
-    const commaPosition = e.target.commaPosition;
 
-    // 保存中文逗号输入前的光标位置
-    const currentCursorPos = cursorPosition ? cursorPosition.start : 0;
+    const newDisplayValue = rawValue;
 
-    // 立即规范化逗号
-    const newDisplayValue = normalizeCommas(rawValue);
-
-    // 转换为源码格式
+    // 转换为源码格式 (其他字段转换仍然保留)
     const newSourceValue = convertDisplayToSource(newDisplayValue);
 
-    // 如果这是一个中文逗号输入，保持光标位置在逗号之后
-    if (justTypedComma && commaPosition) {
-      setCursorPosition(commaPosition);
-    } else {
-      setCursorPosition(currentCursorPos);
-    }
+    // 更新光标位置
+    setCursorPosition(cursorPosition ? cursorPosition.start : 0);
 
     setDisplayFormula(newDisplayValue);
     setSourceFormula(newSourceValue);
@@ -1467,7 +1489,7 @@ const FormulaEditor = ({
     // 验证更新后的公式
     validateFormula(newDisplayValue);
 
-    // 调用onChange通知Form - 重要的是提供源码格式给父组件
+    // 调用onChange通知Form
     if (onChange) {
       onChange({
         display: newDisplayValue,
@@ -1581,7 +1603,7 @@ const FormulaEditor = ({
         args.push(evaluateArg(currentArg.trim(), testData));
         currentArg = '';
       } else {
-        currentArg += char;
+        currentParam += char;
       }
     }
 
@@ -1710,6 +1732,7 @@ const FormulaEditor = ({
     const fieldPatterns = [];
 
     fields.forEach((field) => {
+      // 正确转义特殊正则表达式字符
       const escapedName = field.displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       fieldPatterns.push(escapedName);
     });
